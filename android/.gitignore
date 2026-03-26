@@ -1,0 +1,37 @@
+# Flutter/Dart build files
+build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE configs
+.idea/
+.vscode/
+*.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment / secret files
+.env
+.env.local
+.env.*.local
+secrets.json
+google-services.json   # Firebase Android config
+GoogleService-Info.plist  # Firebase iOS config
+
+# Generated plugin files
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Optional: coverage & temp files
+coverage/
+*.lock
+*.tmp
