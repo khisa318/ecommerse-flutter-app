@@ -17,7 +17,7 @@ class ProductRepositoryImpl implements ProductRepository {
   Future<List<Product>> getProducts({
     int page = 1,
     int limit = 20,
-    int? categoryId,
+    List<int>? categoryIds,
   }) async {
     try {
       print('📦 ProductRepositoryImpl: Fetching page $page');
@@ -25,17 +25,11 @@ class ProductRepositoryImpl implements ProductRepository {
       final dtos = await remoteDataSource.getProducts(
         page: page,
         limit: limit,
-        categoryId: categoryId,
+        categoryIds: categoryIds,
       );
 
       print(
           '📦 ProductRepositoryImpl: Received ${dtos.length} DTOs from remote');
-
-      // Fallback: if no products, try without is_active filter
-      if (dtos.isEmpty && page == 1) {
-        print(
-            '📦 ProductRepositoryImpl: No products returned, this may indicate is_active filtering issue');
-      }
 
       // Convert DTOs to entities and cache
       final products = await Future.wait(
@@ -103,11 +97,13 @@ class ProductRepositoryImpl implements ProductRepository {
 
   Future<Product> _mapDtoToProduct(dto) async {
     String imageUrl = 'lib/images/smartphones/mobile2.jpg';
+    List<String> images = [imageUrl];
 
     try {
-      final images = await remoteDataSource.getProductImages(dto.id);
-      if (images.isNotEmpty) {
-        imageUrl = images.first;
+      final fetchedImages = await remoteDataSource.getProductImages(dto.id);
+      if (fetchedImages.isNotEmpty) {
+        imageUrl = fetchedImages.first;
+        images = fetchedImages;
       }
     } catch (_) {
       // Fall back to bundled placeholder when no database image is available.
@@ -115,39 +111,39 @@ class ProductRepositoryImpl implements ProductRepository {
 
     return dto.toEntity(
       imageUrl: imageUrl,
-      colors: ['Black', 'White', 'Blue'],
-      storageOptions: ['64GB', '128GB', '256GB'],
+      images: images,
     );
   }
 
   void _cacheProducts(List<Product> products, {required String key}) {
-    final json = products
-        .map((p) => {
-              'id': p.id,
-              'title': p.title,
-              'price': p.price,
-              'description': p.description,
-            })
-        .toList();
-    sharedPreferences.setString(key, json.toString());
+    // Simplified JSON caching for now to avoid mapping complexity with variants.
+    // In production, consider a local database (sembast/sqlite).
     sharedPreferences.setInt(
         '${key}_timestamp', DateTime.now().millisecondsSinceEpoch);
   }
 
   List<Product>? _getCachedProducts({required String key}) {
+    // Basic timestamp check
     final timestamp = sharedPreferences.getInt('${key}_timestamp') ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - timestamp > 5 * 60 * 1000) return null; // 5 min expiry
 
-    // Cache valid for 5 minutes
-    if (now - timestamp > 5 * 60 * 1000) {
-      return null;
-    }
-
-    final data = sharedPreferences.getString(key);
-    if (data == null) return null;
-
-    // Simple cache - in production, deserialize properly
+    // Return null to trigger refetch if cache is simplified.
     return null;
+  }
+
+  void clearProductCache() {
+    final keys = sharedPreferences.getKeys();
+    for (String key in keys) {
+      if (key.startsWith('products_page_')) {
+        sharedPreferences.remove(key);
+        sharedPreferences.remove('${key}_timestamp');
+      }
+    }
+  }
+
+  List<Product>? getCachedProductsPage({int page = 1}) {
+    return _getCachedProducts(key: 'products_page_$page');
   }
 }
 
@@ -163,20 +159,8 @@ class CategoryRepositoryImpl implements CategoryRepository {
   @override
   Future<List<Category>> getCategories() async {
     try {
-      // Try get from cache first (24 hours)
-      final cached = _getCachedCategories();
-      if (cached != null) {
-        return cached;
-      }
-
-      // Fetch from remote
       final dtos = await remoteDataSource.getCategories();
-      final categories = dtos.map((dto) => dto.toEntity()).toList();
-
-      // Cache categories
-      _cacheCategories(categories);
-
-      return categories;
+      return dtos.map((dto) => dto.toEntity()).toList();
     } catch (e) {
       rethrow;
     }
@@ -190,32 +174,6 @@ class CategoryRepositoryImpl implements CategoryRepository {
     } catch (e) {
       rethrow;
     }
-  }
-
-  // ==================== CACHING ====================
-
-  void _cacheCategories(List<Category> categories) {
-    final json = categories.map((c) => {'id': c.id, 'name': c.name}).toList();
-    sharedPreferences.setString('categories', json.toString());
-    sharedPreferences.setInt(
-      'categories_timestamp',
-      DateTime.now().millisecondsSinceEpoch,
-    );
-  }
-
-  List<Category>? _getCachedCategories() {
-    final timestamp = sharedPreferences.getInt('categories_timestamp') ?? 0;
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    // Cache valid for 24 hours
-    if (now - timestamp > 24 * 60 * 60 * 1000) {
-      return null;
-    }
-
-    final data = sharedPreferences.getString('categories');
-    if (data == null) return null;
-
-    return null; // Simplified - deserialize in production
   }
 }
 

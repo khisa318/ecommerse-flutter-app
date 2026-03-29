@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../domain/entities/entities.dart';
+import '../providers/sync_provider.dart';
 import '../utils/account_section_card.dart';
 import '../utils/theme.dart';
+import 'package:intl/intl.dart';
 
 class ReviewsScreen extends StatefulWidget {
   const ReviewsScreen({super.key});
@@ -10,43 +14,10 @@ class ReviewsScreen extends StatefulWidget {
 }
 
 class _ReviewsScreenState extends State<ReviewsScreen> {
-  late final List<_ReviewEntry> _reviews;
-
-  @override
-  void initState() {
-    super.initState();
-    _reviews = [
-      _ReviewEntry(
-        productName: 'Galaxy Smart Watch',
-        comment:
-            'Clean display, good battery life, and smooth setup with my phone.',
-        rating: 4,
-        dateLabel: 'Reviewed 3 days ago',
-      ),
-      _ReviewEntry(
-        productName: 'Noise Cancelling Earbuds',
-        comment:
-            'Comfortable fit and solid sound quality for everyday listening.',
-        rating: 5,
-        dateLabel: 'Reviewed 1 week ago',
-      ),
-    ];
-  }
-
-  void _deleteReview(_ReviewEntry review) {
-    setState(() {
-      _reviews.remove(review);
-    });
-  }
-
-  Future<void> _openReviewEditor({_ReviewEntry? review}) async {
-    final productController = TextEditingController(
-      text: review?.productName ?? '',
-    );
-    final commentController = TextEditingController(
-      text: review?.comment ?? '',
-    );
+  Future<void> _openReviewEditor({Review? review}) async {
+    final commentController = TextEditingController(text: review?.comment ?? '');
     int selectedRating = review?.rating ?? 4;
+    int? productId = review?.productId;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -80,10 +51,12 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: productController,
-                      decoration: _inputDecoration('Product name'),
-                    ),
+                    if (review == null)
+                       TextField(
+                        onChanged: (v) => productId = int.tryParse(v),
+                        decoration: _inputDecoration('Product ID (Numeric)'),
+                        keyboardType: TextInputType.number,
+                      ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: commentController,
@@ -121,33 +94,27 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
-                          final productName = productController.text.trim();
+                        onPressed: () async {
                           final comment = commentController.text.trim();
-                          if (productName.isEmpty || comment.isEmpty) {
+                          if (comment.isEmpty || (review == null && productId == null)) {
                             return;
                           }
 
-                          setState(() {
+                          final provider = context.read<SyncProvider>();
+                          try {
                             if (review == null) {
-                              _reviews.insert(
-                                0,
-                                _ReviewEntry(
-                                  productName: productName,
-                                  comment: comment,
-                                  rating: selectedRating,
-                                  dateLabel: 'Reviewed just now',
-                                ),
-                              );
+                              await provider.addReview(productId!, selectedRating, comment);
                             } else {
-                              review.productName = productName;
-                              review.comment = comment;
-                              review.rating = selectedRating;
-                              review.dateLabel = 'Updated just now';
+                              await provider.updateReview(review.id, selectedRating, comment);
                             }
-                          });
-
-                          Navigator.pop(context, true);
+                            if (mounted) Navigator.pop(context, true);
+                          } catch (e) {
+                             if (mounted) {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(content: Text('Error: $e'))
+                               );
+                             }
+                          }
                         },
                         child: Text(
                           review == null ? 'Save Review' : 'Update Review',
@@ -163,7 +130,6 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
       },
     );
 
-    productController.dispose();
     commentController.dispose();
 
     if (saved == true && mounted) {
@@ -178,11 +144,21 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final syncProvider = context.watch<SyncProvider>();
+    final reviews = syncProvider.reviews;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         title: const Text('Ratings & Reviews'),
         backgroundColor: Colors.white,
+        actions: [
+          if (syncProvider.isSyncingReviews)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openReviewEditor,
@@ -191,146 +167,147 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         icon: const Icon(Icons.add_comment_outlined),
         label: const Text('Add Review'),
       ),
-      body: ListView(
+      body: RefreshIndicator(
+        onRefresh: () => syncProvider.syncReviews(force: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            AccountSectionCard(
+              title: 'Your Product Reviews',
+              subtitle: 'Manage your feedback, update comments, or remove reviews you no longer want to keep.',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildMetricTile(
+                      label: 'Reviews',
+                      value: reviews.length.toString(),
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildMetricTile(
+                      label: 'Avg. Rating',
+                      value: reviews.isEmpty
+                          ? '0.0'
+                          : (reviews.map((r) => r.rating).reduce((a, b) => a + b) / reviews.length).toStringAsFixed(1),
+                      color: AppTheme.accentOrange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (reviews.isEmpty)
+              AccountSectionCard(
+                title: 'No Reviews Yet',
+                subtitle: 'Share feedback on your favorite gadgets to help other shoppers.',
+                child: SizedBox(
+                  height: 140,
+                  child: Center(
+                    child: syncProvider.isSyncingReviews 
+                      ? const CircularProgressIndicator()
+                      : const Icon(
+                          Icons.rate_review_outlined,
+                          size: 60,
+                          color: AppTheme.primaryColor,
+                        ),
+                  ),
+                ),
+              )
+            else
+              AccountSectionCard(
+                title: 'Review History',
+                subtitle: 'Edit or delete any review from your account.',
+                child: Column(
+                  children: reviews
+                      .map(
+                        (review) => _buildReviewItem(syncProvider, review),
+                      )
+                      .toList(),
+                ),
+              ),
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewItem(SyncProvider provider, Review review) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AccountSectionCard(
-            title: 'Your Product Reviews',
-            subtitle:
-                'Manage your feedback, update comments, or remove reviews you no longer want to keep.',
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildMetricTile(
-                    label: 'Reviews',
-                    value: _reviews.length.toString(),
-                    color: AppTheme.primaryColor,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Product ID: ${review.productId}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildMetricTile(
-                    label: 'Avg. Rating',
-                    value: _reviews.isEmpty
-                        ? '0.0'
-                        : (_reviews
-                                    .map((review) => review.rating)
-                                    .reduce((a, b) => a + b) /
-                                _reviews.length)
-                            .toStringAsFixed(1),
-                    color: AppTheme.accentOrange,
-                  ),
+              ),
+              Text(
+                DateFormat('dd MMM').format(review.updatedAt),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textMuted,
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: List.generate(
+              5,
+              (index) => Icon(
+                index < review.rating ? Icons.star : Icons.star_border,
+                size: 18,
+                color: AppTheme.accentOrange,
+              ),
             ),
           ),
-          if (_reviews.isEmpty)
-            const AccountSectionCard(
-              title: 'No Reviews Yet',
-              subtitle:
-                  'Share feedback on your favorite gadgets to help other shoppers.',
-              child: SizedBox(
-                height: 140,
-                child: Center(
-                  child: Icon(
-                    Icons.rate_review_outlined,
-                    size: 60,
-                    color: AppTheme.primaryColor,
+          const SizedBox(height: 10),
+          Text(
+            review.comment ?? 'No comment',
+            style: const TextStyle(
+              height: 1.5,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => _openReviewEditor(review: review),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit'),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => provider.deleteReview(review.id),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppTheme.accentRed,
+                ),
+                label: const Text(
+                  'Delete',
+                  style: TextStyle(
+                    color: AppTheme.accentRed,
                   ),
                 ),
               ),
-            )
-          else
-            AccountSectionCard(
-              title: 'Review History',
-              subtitle: 'Edit or delete any review from your account.',
-              child: Column(
-                children: _reviews
-                    .map(
-                      (review) => Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    review.productName,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  review.dateLabel,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: List.generate(
-                                5,
-                                (index) => Icon(
-                                  index < review.rating
-                                      ? Icons.star
-                                      : Icons.star_border,
-                                  size: 18,
-                                  color: AppTheme.accentOrange,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              review.comment,
-                              style: const TextStyle(
-                                height: 1.5,
-                                color: AppTheme.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                TextButton.icon(
-                                  onPressed: () =>
-                                      _openReviewEditor(review: review),
-                                  icon: const Icon(Icons.edit_outlined),
-                                  label: const Text('Edit'),
-                                ),
-                                const SizedBox(width: 8),
-                                TextButton.icon(
-                                  onPressed: () => _deleteReview(review),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: AppTheme.accentRed,
-                                  ),
-                                  label: const Text(
-                                    'Delete',
-                                    style: TextStyle(
-                                      color: AppTheme.accentRed,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          const SizedBox(height: 100),
+            ],
+          ),
         ],
       ),
     );
@@ -392,16 +369,3 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   }
 }
 
-class _ReviewEntry {
-  String productName;
-  String comment;
-  int rating;
-  String dateLabel;
-
-  _ReviewEntry({
-    required this.productName,
-    required this.comment,
-    required this.rating,
-    required this.dateLabel,
-  });
-}

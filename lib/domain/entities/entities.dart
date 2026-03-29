@@ -1,4 +1,3 @@
-/// Domain Entities - Business Logic Models
 class Product {
   final int id;
   final String title;
@@ -10,8 +9,8 @@ class Product {
   final bool isActive;
   final DateTime createdAt;
   final String imageUrl;
-  final List<String> colors;
-  final List<String> storageOptions;
+  final List<String> images;
+  final List<ProductVariant> variants;
 
   Product({
     required this.id,
@@ -24,8 +23,8 @@ class Product {
     required this.isActive,
     required this.createdAt,
     required this.imageUrl,
-    required this.colors,
-    required this.storageOptions,
+    required this.images,
+    required this.variants,
   });
 
   // Computed properties
@@ -38,6 +37,44 @@ class Product {
   }
 
   double get rating => 4.5; // TODO: Calculate from reviews
+
+  /// Get all available attribute names from variants (e.g., ['color', 'storage'])
+  List<String> get availableAttributes {
+    final attributes = <String>{};
+    for (var variant in variants) {
+      attributes.addAll(variant.attributes.keys);
+    }
+    return attributes.toList();
+  }
+
+  /// Get all unique values for a specific attribute (e.g., ['Black', 'White', 'Blue'])
+  List<String> getAttributeValues(String attributeName) {
+    final values = <String>{};
+    for (var variant in variants) {
+      if (variant.attributes.containsKey(attributeName)) {
+        values.add(variant.attributes[attributeName]!);
+      }
+    }
+    return values.toList();
+  }
+}
+
+class ProductVariant {
+  final String id;
+  final int price; // cents (optional override)
+  final int stock;
+  final String? imageUrl; // optional override
+  final Map<String, String> attributes; // e.g. {"color": "Red", "storage": "128GB"}
+
+  ProductVariant({
+    required this.id,
+    required this.price,
+    required this.stock,
+    this.imageUrl,
+    required this.attributes,
+  });
+
+  bool get isInStock => stock > 0;
 }
 
 class Category {
@@ -168,5 +205,25 @@ class Address {
     required this.isDefault,
     required this.createdAt,
     required this.updatedAt,
+  });
+}
+
+class InboxMessage {
+  final String id;
+  final String userId;
+  final String title;
+  final String body;
+  final String category;
+  final bool isRead;
+  final DateTime createdAt;
+
+  InboxMessage({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.body,
+    required this.category,
+    required this.isRead,
+    required this.createdAt,
   });
 }

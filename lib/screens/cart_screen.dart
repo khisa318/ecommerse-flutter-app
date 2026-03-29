@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/cart_provider.dart';
 import '../utils/currency.dart';
 import '../utils/theme.dart';
+import '../models/cart_item.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -114,7 +115,7 @@ class _CartScreenState extends State<CartScreen> {
             width: 120,
             height: 120,
             decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              color: AppTheme.primaryColor.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -158,7 +159,7 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCartItem(item, CartProvider cartProvider) {
+  Widget _buildCartItem(CartItem item, CartProvider cartProvider) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -167,7 +168,7 @@ class _CartScreenState extends State<CartScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -211,26 +212,23 @@ class _CartScreenState extends State<CartScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  item.product.brand,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textMuted,
+                if (item.selectedAttributes.isNotEmpty)
+                  Text(
+                    item.selectedAttributes.entries
+                        .map((e) => '${e.key}: ${e.value}')
+                        .join(', '),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Color: ${item.selectedColor}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Text(
-                      formatKsh(item.product.price),
+                      formatKsh(item.unitPrice),
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -283,7 +281,7 @@ class _CartScreenState extends State<CartScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: AppTheme.accentRed.withValues(alpha: 0.1),
+                color: AppTheme.accentRed.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
@@ -330,7 +328,7 @@ class _CartScreenState extends State<CartScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 20,
             offset: const Offset(0, -10),
           ),
@@ -339,67 +337,6 @@ class _CartScreenState extends State<CartScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            // Promo Code Input
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.background,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(left: 16),
-                    child: Icon(
-                      Icons.local_offer_outlined,
-                      color: AppTheme.textMuted,
-                      size: 20,
-                    ),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _promoController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter Promo Code',
-                        hintStyle: TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      // Apply promo code logic
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Promo code applied!'),
-                          backgroundColor: AppTheme.accentGreen,
-                        ),
-                      );
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.all(8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.arrow_forward,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
             // Summary Rows
             _buildSummaryRow(
               'Sub Total',
@@ -408,7 +345,7 @@ class _CartScreenState extends State<CartScreen> {
             const SizedBox(height: 12),
             _buildSummaryRow(
               'Shipping & Tax',
-              formatKsh(cartProvider.shippingCost),
+              formatKsh(cartProvider.shippingCost + cartProvider.tax),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),

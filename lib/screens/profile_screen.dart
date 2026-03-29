@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/sync_provider.dart';
 import '../utils/account_menu_card.dart';
 import '../utils/cyberspex_branding.dart';
 import '../utils/theme.dart';
@@ -204,25 +205,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return Scaffold(
           backgroundColor: const Color(0xFFF4F7FB),
           body: SafeArea(
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _buildProfileHeader(authProvider),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildStatsSection(user!),
-                ),
-                if (_isEditing)
+            child: RefreshIndicator(
+              onRefresh: () => Provider.of<SyncProvider>(context, listen: false).syncAll(),
+              child: CustomScrollView(
+                slivers: [
                   SliverToBoxAdapter(
-                    child: _buildEditSection(authProvider),
+                    child: _buildProfileHeader(authProvider),
                   ),
-                SliverToBoxAdapter(
-                  child: _buildMenuSection(),
-                ),
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 20),
-                ),
-              ],
+                  SliverToBoxAdapter(
+                    child: Consumer<SyncProvider>(
+                      builder: (context, sync, child) => _buildStatsSection(sync),
+                    ),
+                  ),
+                  if (_isEditing)
+                    SliverToBoxAdapter(
+                      child: _buildEditSection(authProvider),
+                    ),
+                  SliverToBoxAdapter(
+                    child: _buildMenuSection(),
+                  ),
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 20),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -323,6 +329,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileHeader(AuthProvider authProvider) {
     final user = authProvider.currentUser!;
     final initial = user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U';
+    final syncProvider = context.watch<SyncProvider>();
 
     return Container(
       margin: const EdgeInsets.all(20),
@@ -358,6 +365,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   compact: true,
                 ),
               ),
+              if (syncProvider.isSyncingInbox || syncProvider.isSyncingOrders || syncProvider.isSyncingReviews)
+                 const Padding(
+                   padding: EdgeInsets.only(right: 8.0),
+                   child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                 ),
               IconButton(
                 onPressed: authProvider.isLoading
                     ? null
@@ -450,8 +462,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatsSection(dynamic user) {
-    final phoneSaved = (user.phone ?? '').isEmpty ? '0' : '1';
+  Widget _buildStatsSection(SyncProvider sync) {
+    final unreadCount = sync.inboxMessages.where((m) => !m.isRead).length;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -470,19 +482,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatItem('1', 'Profile'),
+          _buildStatItem(sync.orders.length.toString(), 'Orders'),
           Container(
             width: 1,
             height: 44,
             color: AppTheme.borderLight,
           ),
-          _buildStatItem('1', 'Email'),
+          _buildStatItem(unreadCount.toString(), 'Inbox'),
           Container(
             width: 1,
             height: 44,
             color: AppTheme.borderLight,
           ),
-          _buildStatItem(phoneSaved, 'Phone'),
+          _buildStatItem(sync.reviews.length.toString(), 'Reviews'),
         ],
       ),
     );
@@ -610,6 +622,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildMenuSection() {
+    final sync = context.watch<SyncProvider>();
+    final unreadCount = sync.inboxMessages.where((m) => !m.isRead).length;
+
     return AccountMenuCard(
       items: [
         AccountMenuItemData(
@@ -621,6 +636,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         AccountMenuItemData(
           icon: Icons.mail_outline,
           title: 'Inbox',
+          subtitle: unreadCount > 0 ? '$unreadCount unread' : null,
           color: AppTheme.accentOrange,
           onTap: () => Navigator.pushNamed(context, '/inbox'),
         ),

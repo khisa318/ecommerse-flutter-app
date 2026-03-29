@@ -10,6 +10,7 @@ import '../utils/flash_deals_header.dart';
 import '../utils/product_card.dart';
 import '../utils/model_adapter.dart';
 import '../utils/product_grid_loader.dart';
+import 'shop_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,7 +21,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String? _selectedCategory;
 
   @override
   void dispose() {
@@ -36,11 +36,13 @@ class _HomeScreenState extends State<HomeScreen> {
       'Headphone': Icons.headphones,
       'Tablets': Icons.tablet_mac,
       'Laptop': Icons.laptop_mac,
+      'Laptops': Icons.laptop_mac,
       'Speakers': Icons.speaker,
+      'Speaker': Icons.speaker,
     };
 
     return [
-      {'name': 'All', 'icon': Icons.grid_view, 'color': AppTheme.categoryMore},
+      {'name': 'All', 'icon': Icons.grid_view, 'color': AppTheme.categoryMore, 'id': null},
       ...categories.map((cat) {
         final name = cat.name ?? 'Category';
         return {
@@ -72,20 +74,26 @@ class _HomeScreenState extends State<HomeScreen> {
               child: HomeAppBar(cartProvider: cartProvider),
             ),
 
-            // Search Bar
+            // Search Bar - Simplified for Home
             SliverToBoxAdapter(
-              child: SearchBarWidget(
-                searchController: _searchController,
-                selectedCategory: _selectedCategory,
-                onCategoryChanged: (category) {
-                  setState(() {
-                    _selectedCategory = category;
-                    if (_selectedCategory == 'All') {
-                      _selectedCategory = null;
-                    }
-                  });
+              child: GestureDetector(
+                onTap: () {
+                  // Navigate to Shop for search
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ShopScreen()),
+                  );
                 },
-                categories: displayCategories,
+                child: AbsorbPointer(
+                  child: SearchBarWidget(
+                    searchController: _searchController,
+                    selectedCategory: 'All',
+                    onCategoryChanged: (categoryName) {
+                      // Handled in Shop
+                    },
+                    categories: displayCategories,
+                  ),
+                ),
               ),
             ),
 
@@ -101,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.all(20),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
+                    color: Colors.red.withOpacity(0.1),
                     border:
                         Border.all(color: Colors.red.withValues(alpha: 0.5)),
                     borderRadius: BorderRadius.circular(8),
@@ -110,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       const Text(
                         'Error Loading Products',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -120,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         productProvider.errorMessage!,
                         style: TextStyle(
-                          color: Colors.red.withValues(alpha: 0.8),
+                          color: Colors.red.withOpacity(0.8),
                           fontSize: 12,
                         ),
                       ),
@@ -144,37 +152,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // Flash Deals Section
             SliverToBoxAdapter(
-              child: FlashDealsHeader(),
+              child: FlashDealsHeader(
+                onSeeAllPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ShopScreen()),
+                  );
+                },
+              ),
             ),
 
-            // Loading Indicator
+            // Flash Deals Grid (Showing latest 6)
             if (isLoadingFlashDeals)
-              const SliverToBoxAdapter(
-                child: ProductGridLoader(),
+              const SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverToBoxAdapter(child: ProductGridLoader()),
               )
-            else if (productProvider.isLoading && flashDeals.isEmpty)
-              SliverToBoxAdapter(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(48.0),
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppTheme.primaryColor,
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            // Flash Deals Grid
             else if (flashDeals.isEmpty)
               SliverToBoxAdapter(
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.all(48.0),
                     child: Text(
                       productProvider.hasLoadedInitialData
                           ? 'No flash deals available'
-                          : 'Preparing flash deals...',
+                          : 'Preparing premium gadgets...',
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                   ),
@@ -199,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
 
             const SliverToBoxAdapter(
-              child: SizedBox(height: 30),
+              child: SizedBox(height: 48),
             ),
           ],
         ),

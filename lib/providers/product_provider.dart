@@ -11,6 +11,7 @@ class ProductProvider extends ChangeNotifier {
 
   List<Product> _products = [];
   List<Category> _categories = [];
+  List<Category> _allCategories = []; // Store all categories for recursive lookup
   List<Product> _searchResults = [];
   bool _isLoading = false;
   bool _isSearching = false;
@@ -23,10 +24,30 @@ class ProductProvider extends ChangeNotifier {
   bool _hasMoreProducts = true;
   bool _isDisposed = false;
 
+  // New state tracking for backend-side filtering
+  int? _selectedCategoryId;
+  String? _searchQuery;
+
   List<Product> get products => List.unmodifiable(_products);
   List<Category> get categories => List.unmodifiable(_categories);
+  List<Category> get allCategories => List.unmodifiable(_allCategories);
   List<Product> get searchResults => List.unmodifiable(_searchResults);
-  List<Product> get flashDeals => _products.take(5).toList();
+  List<Product> get flashDeals => _products.take(6).toList();
+
+  int? get selectedCategoryId => _selectedCategoryId;
+  String? get searchQuery => _searchQuery;
+
+  /// Recursively get all descendant category IDs
+  List<int> getDescendantIds(int parentId) {
+    if (_allCategories.isEmpty) return [parentId];
+    
+    final ids = [parentId];
+    final children = _allCategories.where((c) => c.parentId == parentId);
+    for (final child in children) {
+      ids.addAll(getDescendantIds(child.id));
+    }
+    return ids;
+  }
 
   bool get isLoading => _isLoading;
   bool get isSearching => _isSearching;
@@ -61,27 +82,78 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> getProducts({int? page}) async {
+  Future<void> refreshProducts() async {
+    // Refresh for search or category or all
+    if (_searchQuery != null && _searchQuery!.isNotEmpty) {
+      await searchProducts(_searchQuery!);
+    } else {
+      await getProducts(page: 1, refresh: true);
+    }
+  }
+
+  Future<void> getProducts({int? page, bool refresh = false}) async {
+    final pageNum = page ?? _currentPage;
+
+    if (refresh) {
+      // Logic for hybrid filtering: 
+      // We don't clear immediately if we're just switching categories to allow local filtering while fetching
+      if (_selectedCategoryId == null && _searchQuery == null) {
+         _products.clear();
+      }
+      _currentPage = 1;
+      _hasMoreProducts = true;
+      productRepository.clearProductCache();
+    }
+
+    if (_isLoading) return; // Prevent duplicate calls
+
+    // Load cache instantly on first page if available and empty
+    if (pageNum == 1 && _products.isEmpty && !refresh && _selectedCategoryId == null) {
+      final cached = productRepository.getCachedProductsPage(page: 1);
+      if (cached != null && cached.isNotEmpty) {
+        _products = List.from(cached);
+        _products.shuffle(); // Randomize on initial load from cache
+        _notifySafely();
+      }
+    }
+
     _isLoading = true;
     _errorMessage = null;
     _notifySafely();
 
     try {
-      final pageNum = page ?? _currentPage;
+      List<int>? categoryIds;
+      if (_selectedCategoryId != null) {
+        categoryIds = getDescendantIds(_selectedCategoryId!);
+      }
+
       final newProducts = await productRepository.getProducts(
         page: pageNum,
         limit: _pageSize,
+        categoryIds: categoryIds,
       );
 
       if (newProducts.isEmpty) {
+        if (pageNum == 1) _products = [];
         _hasMoreProducts = false;
       } else {
         if (pageNum == 1) {
-          _products = newProducts;
+          _products = List.from(newProducts);
+          // Only shuffle if it's the main discoveries page
+          if (_selectedCategoryId == null) {
+            _products.shuffle();
+          }
         } else {
-          _products.addAll(newProducts);
+          // Append preventing duplicates
+          final existingIds = _products.map((p) => p.id).toSet();
+          for (var np in newProducts) {
+            if (!existingIds.contains(np.id)) {
+              _products.add(np);
+            }
+          }
         }
         _currentPage = pageNum;
+        _hasMoreProducts = newProducts.length >= _pageSize;
       }
 
       _isLoading = false;
@@ -104,77 +176,18 @@ class ProductProvider extends ChangeNotifier {
     await getProducts(page: _currentPage + 1);
   }
 
-  Future<Product?> getProductById(int id) async {
-    _isLoading = true;
-    _errorMessage = null;
-    _notifySafely();
-
-    try {
-      final product = await productRepository.getProductById(id);
-      _isLoading = false;
-      _notifySafely();
-      return product;
-    } on EntityNotFoundException catch (e) {
-      _errorMessage = e.message;
-      _isLoading = false;
-      _notifySafely();
-      return null;
-    } catch (e) {
-      _errorMessage = 'Error loading product: ${e.toString()}';
-      _isLoading = false;
-      _notifySafely();
-      return null;
-    }
-  }
-
-  Future<(Product, List<Review>)?> getProductWithReviews(int productId) async {
-    _isLoading = true;
-    _errorMessage = null;
-    _notifySafely();
-
-    try {
-      final result = await productRepository.getProductWithReviews(productId);
-      _isLoading = false;
-      _notifySafely();
-      return result;
-    } catch (e) {
-      _errorMessage = 'Error loading product details: ${e.toString()}';
-      _isLoading = false;
-      _notifySafely();
-      return null;
-    }
-  }
-
-  Future<List<Product>> getProductsByCategory(int categoryId) async {
-    _isLoading = true;
-    _errorMessage = null;
-    _notifySafely();
-
-    try {
-      final categoryProducts = await productRepository.getProducts(
-        page: 1,
-        limit: _pageSize,
-        categoryId: categoryId,
-      );
-
-      _isLoading = false;
-      _notifySafely();
-      return categoryProducts;
-    } catch (e) {
-      _errorMessage = 'Error loading category products: ${e.toString()}';
-      _isLoading = false;
-      _notifySafely();
-      return [];
-    }
-  }
-
+  // --- Search Functions ---
   Future<void> searchProducts(String query) async {
+    _searchQuery = query;
     if (query.isEmpty) {
       _searchResults = [];
       _isSearching = false;
       _notifySafely();
       return;
     }
+
+    // Clear category filter when searching as they are mutually exclusive
+    _selectedCategoryId = null;
 
     _isSearching = true;
     _errorMessage = null;
@@ -195,13 +208,55 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  List<Product> getFlashDeals() {
-    return flashDeals;
+  void clearSearch() {
+    _searchQuery = null;
+    _searchResults = [];
+    _isSearching = false;
+    _notifySafely();
+    refreshProducts();
+  }
+
+  // --- Category Selection ---
+  Future<void> setCategoryFilter(int? categoryId) async {
+    if (_selectedCategoryId == categoryId) return;
+    
+    _selectedCategoryId = categoryId;
+    
+    // Clear search when category is selected
+    _searchQuery = null;
+    _searchResults = [];
+    _isSearching = false;
+
+    // Trigger backend fetch
+    // Note: We don't clear _products here. 
+    // The UI will perform local filtering on current _products while loading new ones.
+    await refreshProducts();
   }
 
   Future<void> getCategories() async {
     try {
-      _categories = await categoryRepository.getCategories();
+      final allCats = await categoryRepository.getCategories();
+      _allCategories = List.from(allCats);
+      
+      const majorCategoryNames = [
+        'Smartphones', 
+        'Audio', 
+        'Accessories', 
+        'Gaming Accessories', 
+        'Storage Accessories'
+      ];
+
+      final filtered = <Category>[];
+      for (var name in majorCategoryNames) {
+        final found = _allCategories.firstWhere(
+          (cat) => cat.name.toLowerCase() == name.toLowerCase() && cat.isActive,
+          orElse: () => Category(id: -1, name: '', isActive: false, createdAt: DateTime.now())
+        );
+        if (found.id != -1) {
+          filtered.add(found);
+        }
+      }
+      _categories = filtered;
       _notifySafely();
     } catch (e) {
       _errorMessage = 'Error loading categories: ${e.toString()}';
@@ -209,46 +264,50 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
-  Future<Category?> getCategoryById(int id) async {
+  Future<Product?> getProductById(int id) async {
+    _isLoading = true;
+    _errorMessage = null;
+    _notifySafely();
     try {
-      final category = await categoryRepository.getCategoryById(id);
-      return category;
-    } catch (_) {
+      final product = await productRepository.getProductById(id);
+      _isLoading = false;
+      _notifySafely();
+      return product;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      _notifySafely();
       return null;
     }
   }
 
-  void clearSearch() {
-    _searchResults = [];
-    _isSearching = false;
+  Future<(Product, List<Review>)?> getProductWithReviews(int productId) async {
+    _isLoading = true;
+    _errorMessage = null;
     _notifySafely();
-  }
-
-  void resetProducts() {
-    _products = [];
-    _currentPage = 1;
-    _hasMoreProducts = true;
-    _notifySafely();
+    try {
+      final result = await productRepository.getProductWithReviews(productId);
+      _isLoading = false;
+      _notifySafely();
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      _notifySafely();
+      return null;
+    }
   }
 
   void _notifySafely() {
-    if (_isDisposed) {
-      return;
-    }
-
+    if (_isDisposed) return;
     final phase = SchedulerBinding.instance.schedulerPhase;
-    if (phase == SchedulerPhase.idle ||
-        phase == SchedulerPhase.postFrameCallbacks) {
+    if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
       notifyListeners();
-      return;
+    } else {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_isDisposed) notifyListeners();
+      });
     }
-
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (_isDisposed) {
-        return;
-      }
-      notifyListeners();
-    });
   }
 
   @override

@@ -20,7 +20,7 @@ class RemoteDataSource {
   Future<List<ProductDTO>> getProducts({
     int page = 1,
     int limit = 20,
-    int? categoryId,
+    List<int>? categoryIds,
   }) async {
     try {
       final offset = (page - 1) * limit;
@@ -32,7 +32,7 @@ class RemoteDataSource {
       final response = await _fetchProductsResponse(
         offset: offset,
         limit: limit,
-        categoryId: categoryId,
+        categoryIds: categoryIds,
         activeOnly: true,
       );
 
@@ -50,7 +50,7 @@ class RemoteDataSource {
         final allResponse = await _fetchProductsResponse(
           offset: offset,
           limit: limit,
-          categoryId: categoryId,
+          categoryIds: categoryIds,
           activeOnly: false,
         );
         final allProducts = List<dynamic>.from(allResponse as List);
@@ -155,7 +155,6 @@ class RemoteDataSource {
       final response = await supabaseClient
           .from('categories')
           .select()
-          .eq('is_active', true)
           .order('name', ascending: true);
 
       return (response as List)
@@ -621,18 +620,14 @@ class RemoteDataSource {
   Future<dynamic> _fetchProductsResponse({
     required int offset,
     required int limit,
-    required int? categoryId,
+    required List<int>? categoryIds,
     required bool activeOnly,
   }) async {
     dynamic query = supabaseClient.from('products').select();
 
-    if (activeOnly) {
-      query = query.eq('is_active', true);
-    }
-
-    if (categoryId != null) {
-      print('RemoteDataSource: Filtering by category_id: $categoryId');
-      query = query.eq('category_id', categoryId);
+    if (categoryIds != null && categoryIds.isNotEmpty) {
+      print('RemoteDataSource: Filtering by category_ids: $categoryIds');
+      query = query.in_('category_id', categoryIds);
     }
 
     return query.order('created_at', ascending: false).range(

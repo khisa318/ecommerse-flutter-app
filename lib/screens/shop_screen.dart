@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/product_provider.dart';
-import '../utils/cyberspex_branding.dart';
 import '../utils/model_adapter.dart';
 import '../utils/product_card.dart';
 import '../utils/product_grid_loader.dart';
 import '../utils/search_bar.dart';
 import '../utils/theme.dart';
+import '../domain/entities/entities.dart' as entities;
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -17,28 +17,52 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String? _selectedCategory;
-  String? _searchQuery;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    
+    // Sync search controller if query exists
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<ProductProvider>(context, listen: false);
+      if (provider.searchQuery != null) {
+        _searchController.text = provider.searchQuery!;
+      }
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent * 0.7) {
+      final provider = Provider.of<ProductProvider>(context, listen: false);
+      if (!provider.isLoading &&
+          provider.hasMoreProducts &&
+          (provider.searchQuery == null || provider.searchQuery!.isEmpty)) {
+        provider.loadMoreProducts();
+      }
+    }
   }
 
   List<Map<String, dynamic>> _convertCategories(List categories) {
     final categoryMap = {
       'Smartphones': Icons.smartphone,
-      'Mobile': Icons.smartphone,
-      'Headphones': Icons.headphones,
-      'Headphone': Icons.headphones,
-      'Tablets': Icons.tablet_mac,
-      'Laptop': Icons.laptop_mac,
-      'Speakers': Icons.speaker,
+      'Audio': Icons.headset,
+      'Accessories': Icons.cable,
+      'Gaming Accessories': Icons.sports_esports,
+      'Storage Accessories': Icons.sd_storage,
     };
 
     return [
-      {'name': 'All', 'icon': Icons.grid_view, 'color': AppTheme.categoryMore},
+      {'name': 'All', 'icon': Icons.grid_view, 'color': AppTheme.categoryMore, 'id': null},
       ...categories.map((cat) {
         final name = cat.name ?? 'Category';
         return {
@@ -56,328 +80,282 @@ class _ShopScreenState extends State<ShopScreen> {
     return Consumer<ProductProvider>(
       builder: (context, productProvider, child) {
         final allProducts = productProvider.products;
-        final filteredProducts =
-            _searchQuery != null && _searchQuery!.isNotEmpty
-                ? productProvider.searchResults
-                : allProducts;
-        final displayCategories =
-            _convertCategories(productProvider.categories);
-        final isLoadingProducts = productProvider.isInitialDataLoading &&
-            allProducts.isEmpty &&
-            (_searchQuery == null || _searchQuery!.isEmpty);
+        final searchResults = productProvider.searchResults;
+        final isSearching = productProvider.isSearching || (productProvider.searchQuery != null && productProvider.searchQuery!.isNotEmpty);
+        final isSelectingCategory = productProvider.selectedCategoryId != null;
+        
+        // Hybrid Logic:
+        // 1. If searching, show search results
+        // 2. If selecting category AND backend is loading, show a local filter of currently loaded products
+        // 3. Otherwise, show allProducts (which are either main discoveries or server-side filtered category list)
+        late List<entities.Product> displayProducts;
+        
+        if (isSearching) {
+          displayProducts = searchResults;
+        } else if (isSelectingCategory && productProvider.isLoading) {
+          // Perform local filter on the memory list until backend returns for instant feedback
+          final selectedIds = productProvider.getDescendantIds(productProvider.selectedCategoryId!);
+          displayProducts = allProducts.where((p) => selectedIds.contains(p.categoryId)).toList();
+        } else {
+          displayProducts = allProducts;
+        }
+
+        final displayCategories = _convertCategories(productProvider.categories);
+        final isLoadingInitially = productProvider.isInitialDataLoading && allProducts.isEmpty;
 
         return Scaffold(
           backgroundColor: const Color(0xFFF4F7FB),
           body: SafeArea(
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF0F2E67),
-                          AppTheme.primaryColor,
-                          Color(0xFF0EA5E9),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.22),
-                          blurRadius: 24,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const CyberspexWordmark(
-                          titleColor: Colors.white,
-                          subtitleColor: Color(0xFFD7E8FF),
-                          compact: true,
-                        ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Shop premium gadgets, accessories, and smart essentials curated for your lifestyle.',
-                          style: TextStyle(
-                            height: 1.5,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _HeroMetric(
-                                label: 'Live Products',
-                                value: '${allProducts.length}',
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _HeroMetric(
-                                label: 'Search Results',
-                                value: '${filteredProducts.length}',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: SearchBarWidget(
-                      searchController: _searchController,
-                      selectedCategory: _selectedCategory,
-                      onCategoryChanged: (category) {
-                        setState(() {
-                          _selectedCategory = category;
-                          if (_selectedCategory == 'All') {
-                            _selectedCategory = null;
-                          }
-                        });
-                      },
-                      categories: displayCategories,
-                      onSearchChanged: _onSearchChanged,
-                    ),
-                  ),
-                ),
-                if (productProvider.errorMessage != null)
+            child: RefreshIndicator(
+              onRefresh: () async {
+                await productProvider.refreshProducts();
+              },
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  // Improved Shop Banner
                   SliverToBoxAdapter(
                     child: Container(
-                      margin: const EdgeInsets.all(20),
-                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                       decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: Colors.red.withValues(alpha: 0.22),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF0F172A),
+                            Color(0xFF1E293B),
+                            Color(0xFF334155),
+                          ],
                         ),
+                        borderRadius: BorderRadius.circular(32),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
+                          ),
+                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Unable to load products',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.red,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Discover',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Premium Tech',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w900,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.bolt_rounded, color: Colors.amber, size: 28),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 20),
                           Text(
-                            productProvider.errorMessage!,
+                            'Explore our curated collection of high-performance gadgets and smart lifestyle essentials.',
                             style: TextStyle(
-                              color: Colors.red.withValues(alpha: 0.85),
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 15,
+                              height: 1.5,
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: () => productProvider.getProducts(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                            ),
-                            child: const Text('Retry'),
                           ),
                         ],
                       ),
                     ),
                   ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 14),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Featured In Shop',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: AppTheme.borderLight),
-                          ),
-                          child: Text(
-                            '${filteredProducts.length} items',
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (productProvider.isSearching)
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: LinearProgressIndicator(
-                        minHeight: 3,
-                        color: AppTheme.primaryColor,
-                        backgroundColor: AppTheme.borderLight,
-                      ),
-                    ),
-                  ),
-                if (isLoadingProducts)
-                  const SliverToBoxAdapter(
-                    child: ProductGridLoader(itemCount: 6),
-                  )
-                else if (productProvider.isLoading && filteredProducts.isEmpty)
-                  SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(48),
-                        child: CircularProgressIndicator(
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            AppTheme.primaryColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                else if (filteredProducts.isEmpty)
+                  
+                  // Search & Categories Section
                   SliverToBoxAdapter(
                     child: Container(
-                      margin: const EdgeInsets.all(20),
-                      padding: const EdgeInsets.all(28),
+                      margin: const EdgeInsets.fromLTRB(0, 20, 0, 0),
+                      padding: EdgeInsets.zero,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Column(
-                        children: [
-                          const Icon(
-                            Icons.inventory_2_outlined,
-                            size: 56,
-                            color: AppTheme.textMuted,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            productProvider.hasLoadedInitialData
-                                ? 'No products found'
-                                : 'Loading products...',
-                            style: Theme.of(context).textTheme.titleLarge,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
                           ),
                         ],
                       ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 0.65,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => ProductCard(
-                          product: filteredProducts[index].toModel(),
-                        ),
-                        childCount: filteredProducts.length,
+                      child: SearchBarWidget(
+                        searchController: _searchController,
+                        selectedCategory: productProvider.selectedCategoryId == null 
+                            ? 'All' 
+                            : displayCategories.firstWhere(
+                                (c) => c['id'] == productProvider.selectedCategoryId,
+                                orElse: () => {'name': 'All'}
+                              )['name'],
+                        onCategoryChanged: (categoryName) {
+                          if (categoryName == 'All' || categoryName == null) {
+                            productProvider.setCategoryFilter(null);
+                          } else {
+                            final cat = displayCategories.firstWhere(
+                              (c) => c['name'] == categoryName,
+                              orElse: () => {'id': null}
+                            );
+                            if (cat['id'] != null) {
+                              productProvider.setCategoryFilter(cat['id']);
+                              _searchController.clear();
+                            }
+                          }
+                        },
+                        categories: displayCategories,
+                        onSearchChanged: (val) {
+                          productProvider.searchProducts(val);
+                        },
                       ),
                     ),
                   ),
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 30),
-                ),
-              ],
+
+                  // Section Title
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+                      child: Text(
+                        isSearching 
+                            ? 'Search Results' 
+                            : productProvider.selectedCategoryId != null 
+                                ? 'Category Results'
+                                : 'All Products',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  if (productProvider.isSearching)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 24),
+                        child: LinearProgressIndicator(
+                          minHeight: 3,
+                          color: AppTheme.primaryColor,
+                          backgroundColor: AppTheme.borderLight,
+                        ),
+                      ),
+                    ),
+
+                  if (isLoadingInitially)
+                    const SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: 20),
+                      sliver: SliverToBoxAdapter(child: ProductGridLoader(itemCount: 6)),
+                    )
+                  else if (displayProducts.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Container(
+                        margin: const EdgeInsets.all(24),
+                        padding: const EdgeInsets.symmetric(vertical: 60),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(32),
+                        ),
+                        child: Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppTheme.background,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.search_off_rounded,
+                                size: 48,
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'No products found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Try adjusting your search or category',
+                              style: TextStyle(
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      sliver: SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.65,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => ProductCard(
+                            product: displayProducts[index].toModel(),
+                          ),
+                          childCount: displayProducts.length,
+                        ),
+                      ),
+                    ),
+
+                  if (productProvider.isLoading && !isLoadingInitially)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 48)),
+                ],
+              ),
             ),
           ),
         );
       },
-    );
-  }
-
-  void _onSearchChanged(String query) {
-    setState(() {
-      _searchQuery = query;
-    });
-    if (query.isNotEmpty) {
-      Provider.of<ProductProvider>(context, listen: false)
-          .searchProducts(query);
-    } else {
-      Provider.of<ProductProvider>(context, listen: false).clearSearch();
-    }
-  }
-}
-
-class _HeroMetric extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _HeroMetric({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

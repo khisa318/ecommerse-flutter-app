@@ -12,6 +12,8 @@ import 'providers/cart_provider.dart';
 import 'providers/checkout_provider.dart';
 import 'providers/product_provider.dart';
 import 'providers/wishlist_provider.dart';
+import 'providers/sync_provider.dart';
+import 'data/repositories/sync_repository.dart';
 import 'screens/address_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/customer_service_screen.dart';
@@ -76,6 +78,7 @@ class _CyberspexAppState extends State<CyberspexApp> {
   late final CartProvider _cartProvider;
   late final CheckoutProvider _checkoutProvider;
   late final WishlistProvider _wishlistProvider;
+  late final SyncRepository _syncRepository;
 
   @override
   void initState() {
@@ -105,6 +108,10 @@ class _CyberspexAppState extends State<CyberspexApp> {
     _wishlistProvider = WishlistProvider(
       remoteDataSource: _remoteDataSource,
     );
+    _syncRepository = SyncRepository(
+      supabaseClient: Supabase.instance.client,
+      sharedPreferences: widget.sharedPreferences,
+    );
   }
 
   @override
@@ -129,6 +136,17 @@ class _CyberspexAppState extends State<CyberspexApp> {
 
         ChangeNotifierProvider<WishlistProvider>.value(
             value: _wishlistProvider),
+
+        ChangeNotifierProxyProvider<AuthProvider, SyncProvider>(
+          create: (context) => SyncProvider(
+            syncRepository: _syncRepository,
+            userId: _authProvider.currentUserId,
+          ),
+          update: (context, auth, previous) => SyncProvider(
+            syncRepository: _syncRepository,
+            userId: auth.currentUserId,
+          ),
+        ),
       ],
       child: MaterialApp(
         title: 'Cyberspex Technologies',

@@ -3,33 +3,42 @@ import 'product.dart';
 class CartItem {
   final String id;
   final Product product;
+  final String? variantId; // New: link to specific variant
   int quantity;
-  String selectedColor;
-  String selectedStorage;
+  final Map<String, String> selectedAttributes;
 
   CartItem({
     required this.id,
     required this.product,
+    this.variantId,
     this.quantity = 1,
-    required this.selectedColor,
-    required this.selectedStorage,
+    required this.selectedAttributes,
   });
 
-  double get totalPrice => product.price * quantity;
+  /// Get price based on selected variant or base product
+  double get unitPrice {
+    if (variantId != null) {
+      final variant = product.variants.firstWhere((v) => v.id == variantId);
+      return (variant.price ?? product.price);
+    }
+    return product.price;
+  }
+
+  double get totalPrice => unitPrice * quantity;
 
   CartItem copyWith({
     String? id,
     Product? product,
+    String? variantId,
     int? quantity,
-    String? selectedColor,
-    String? selectedStorage,
+    Map<String, String>? selectedAttributes,
   }) {
     return CartItem(
       id: id ?? this.id,
       product: product ?? this.product,
+      variantId: variantId ?? this.variantId,
       quantity: quantity ?? this.quantity,
-      selectedColor: selectedColor ?? this.selectedColor,
-      selectedStorage: selectedStorage ?? this.selectedStorage,
+      selectedAttributes: selectedAttributes ?? this.selectedAttributes,
     );
   }
 
@@ -37,9 +46,9 @@ class CartItem {
     return CartItem(
       id: json['id'],
       product: Product.fromJson(json['product']),
+      variantId: json['variantId'],
       quantity: json['quantity'] ?? 1,
-      selectedColor: json['selectedColor'],
-      selectedStorage: json['selectedStorage'],
+      selectedAttributes: Map<String, String>.from(json['selectedAttributes'] ?? {}),
     );
   }
 
@@ -47,9 +56,9 @@ class CartItem {
     return {
       'id': id,
       'product': product.toJson(),
+      'variantId': variantId,
       'quantity': quantity,
-      'selectedColor': selectedColor,
-      'selectedStorage': selectedStorage,
+      'selectedAttributes': selectedAttributes,
     };
   }
 }

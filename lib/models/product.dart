@@ -13,11 +13,11 @@ class Product {
   final double rating;
   final int reviewCount;
   final List<Review> reviews;
-  final List<String> colors;
-  final List<String> storageOptions;
+  final List<ProductVariant> variants;
   final List<String> features;
   final String category;
-  final bool isOnSale;
+  final int stock;
+  final bool isActive;
 
   Product({
     required this.id,
@@ -31,16 +31,52 @@ class Product {
     required this.rating,
     required this.reviewCount,
     this.reviews = const [],
-    required this.colors,
-    required this.storageOptions,
+    required this.variants,
     required this.features,
     required this.category,
-    this.isOnSale = false,
+    required this.stock,
+    this.isActive = true,
   });
+
+  bool get isOnSale => originalPrice != null && originalPrice! > price;
 
   double get discountPercentage {
     if (originalPrice == null || originalPrice == 0) return 0;
     return ((originalPrice! - price) / originalPrice! * 100).roundToDouble();
+  }
+
+  /// Get all available attribute names from variants (e.g., ['color', 'storage'])
+  List<String> get availableAttributes {
+    final attributes = <String>{};
+    for (var variant in variants) {
+      attributes.addAll(variant.attributes.keys);
+    }
+    return attributes.toList();
+  }
+
+  /// Get all unique values for a specific attribute
+  List<String> getAttributeValues(String attributeName) {
+    final values = <String>{};
+    for (var variant in variants) {
+      if (variant.attributes.containsKey(attributeName)) {
+        values.add(variant.attributes[attributeName]!);
+      }
+    }
+    return values.toList();
+  }
+
+  /// Find matching variant based on selected attributes
+  ProductVariant? findVariant(Map<String, String> selectedAttributes) {
+    for (var variant in variants) {
+      bool match = true;
+      selectedAttributes.forEach((key, value) {
+        if (variant.attributes[key] != value) {
+          match = false;
+        }
+      });
+      if (match) return variant;
+    }
+    return null;
   }
 
   Product copyWith({
@@ -55,11 +91,11 @@ class Product {
     double? rating,
     int? reviewCount,
     List<Review>? reviews,
-    List<String>? colors,
-    List<String>? storageOptions,
+    List<ProductVariant>? variants,
     List<String>? features,
     String? category,
-    bool? isOnSale,
+    int? stock,
+    bool? isActive,
   }) {
     return Product(
       id: id ?? this.id,
@@ -73,32 +109,40 @@ class Product {
       rating: rating ?? this.rating,
       reviewCount: reviewCount ?? this.reviewCount,
       reviews: reviews ?? this.reviews,
-      colors: colors ?? this.colors,
-      storageOptions: storageOptions ?? this.storageOptions,
+      variants: variants ?? this.variants,
       features: features ?? this.features,
       category: category ?? this.category,
-      isOnSale: isOnSale ?? this.isOnSale,
+      stock: stock ?? this.stock,
+      isActive: isActive ?? this.isActive,
     );
   }
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
-      id: json['id'],
+      id: json['id'].toString(),
       name: json['name'],
       brand: json['brand'],
       description: json['description'],
       price: (json['price'] as num).toDouble(),
-      originalPrice: json['originalPrice'] != null ? (json['originalPrice'] as num).toDouble() : null,
+      originalPrice: json['originalPrice'] != null
+          ? (json['originalPrice'] as num).toDouble()
+          : null,
       imageUrl: json['imageUrl'],
       galleryImages: List<String>.from(json['galleryImages'] ?? []),
       rating: (json['rating'] as num).toDouble(),
       reviewCount: json['reviewCount'],
-      reviews: (json['reviews'] as List<dynamic>?)?.map((e) => Review.fromJson(e)).toList() ?? [],
-      colors: List<String>.from(json['colors'] ?? []),
-      storageOptions: List<String>.from(json['storageOptions'] ?? []),
+      reviews: (json['reviews'] as List<dynamic>?)
+              ?.map((e) => Review.fromJson(e))
+              .toList() ??
+          [],
+      variants: (json['variants'] as List<dynamic>?)
+              ?.map((e) => ProductVariant.fromJson(e))
+              .toList() ??
+          [],
       features: List<String>.from(json['features'] ?? []),
       category: json['category'],
-      isOnSale: json['isOnSale'] ?? false,
+      stock: json['stock'] ?? 0,
+      isActive: json['isActive'] ?? true,
     );
   }
 
@@ -115,11 +159,47 @@ class Product {
       'rating': rating,
       'reviewCount': reviewCount,
       'reviews': reviews.map((r) => r.toJson()).toList(),
-      'colors': colors,
-      'storageOptions': storageOptions,
+      'variants': variants.map((v) => v.toJson()).toList(),
       'features': features,
       'category': category,
-      'isOnSale': isOnSale,
+      'stock': stock,
+      'isActive': isActive,
+    };
+  }
+}
+
+class ProductVariant {
+  final String id;
+  final double? price; // Optional override
+  final int stock;
+  final String? imageUrl; // Optional override
+  final Map<String, String> attributes;
+
+  ProductVariant({
+    required this.id,
+    this.price,
+    required this.stock,
+    this.imageUrl,
+    required this.attributes,
+  });
+
+  factory ProductVariant.fromJson(Map<String, dynamic> json) {
+    return ProductVariant(
+      id: json['id'].toString(),
+      price: (json['price'] as num?)?.toDouble(),
+      stock: (json['stock'] as num?)?.toInt() ?? 0,
+      imageUrl: json['imageUrl'],
+      attributes: Map<String, String>.from(json['attributes'] ?? {}),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'price': price,
+      'stock': stock,
+      'imageUrl': imageUrl,
+      'attributes': attributes,
     };
   }
 }

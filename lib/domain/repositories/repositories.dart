@@ -13,7 +13,7 @@ abstract class ProductRepository {
   Future<List<Product>> getProducts({
     int page,
     int limit,
-    int? categoryId,
+    List<int>? categoryIds,
   });
 
   /// Fetch single product by ID

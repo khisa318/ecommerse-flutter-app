@@ -74,7 +74,8 @@ class CartProvider extends ChangeNotifier {
     try {
       final cartRows = await _supabase
           .from('cart_items')
-          .select('product_id, quantity, products(*)')
+          .select(
+              'id, product_id, variant_id, quantity, selected_attributes, products(*)')
           .eq('user_id', userId);
 
       final loadedItems = <CartItem>[];
@@ -89,16 +90,17 @@ class CartProvider extends ChangeNotifier {
           Map<String, dynamic>.from(productJson),
         );
 
+        final variantId = cartRow['variant_id']?.toString();
+        final selectedAttributes =
+            Map<String, String>.from(cartRow['selected_attributes'] ?? {});
+
         loadedItems.add(
           CartItem(
-            id: product.id,
+            id: cartRow['id'].toString(),
             product: product,
+            variantId: variantId,
             quantity: (cartRow['quantity'] as num?)?.toInt() ?? 1,
-            selectedColor:
-                product.colors.isNotEmpty ? product.colors.first : 'Default',
-            selectedStorage: product.storageOptions.isNotEmpty
-                ? product.storageOptions.first
-                : 'Standard',
+            selectedAttributes: selectedAttributes,
           ),
         );
       }
@@ -114,40 +116,77 @@ class CartProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addToCart(Product product, String color, String storage) async {
+  Future<void> addToCart(
+      Product product, Map<String, String> selectedAttributes,
+      {String? variantId, int quantity = 1}) async {
     final existingIndex = _items.indexWhere(
-      (item) => item.product.id == product.id,
+      (item) => item.product.id == product.id && item.variantId == variantId,
     );
 
     if (existingIndex >= 0) {
-      _items[existingIndex].quantity++;
-      _items[existingIndex].selectedColor = color;
-      _items[existingIndex].selectedStorage = storage;
+      _items[existingIndex].quantity += quantity;
     } else {
       _items.add(
         CartItem(
-          id: product.id,
+          id: DateTime.now()
+              .millisecondsSinceEpoch
+              .toString(), // Temp ID until sync
           product: product,
-          selectedColor: color,
-          selectedStorage: storage,
+          variantId: variantId,
+          quantity: quantity,
+          selectedAttributes: selectedAttributes,
         ),
       );
     }
 
     _notifySafely();
-    await _persistProductQuantity(product.id, _quantityForProduct(product.id));
+
+    // In a real app we would sync with backend here
+    final productId = int.parse(product.id);
+    await _syncAddToCart(productId, variantId, selectedAttributes);
+  }
+
+  Future<void> _syncAddToCart(int productId, String? variantId,
+      Map<String, String> selectedAttributes) async {
+    final userId = _currentUserId;
+    if (userId == null) return;
+
+    try {
+      await _supabase.from('cart_items').upsert({
+        'user_id': userId,
+        'product_id': productId,
+        'variant_id': variantId != null ? int.tryParse(variantId) : null,
+        'selected_attributes': selectedAttributes,
+        'quantity': _items
+            .firstWhere((i) =>
+                i.product.id == productId.toString() &&
+                i.variantId == variantId)
+            .quantity,
+      });
+    } catch (e) {
+      debugPrint('Error syncing add to cart: $e');
+    }
   }
 
   Future<void> removeFromCart(String cartItemId) async {
     final itemIndex = _items.indexWhere((item) => item.id == cartItemId);
-    if (itemIndex < 0) {
-      return;
-    }
+    if (itemIndex < 0) return;
 
-    final productId = _items[itemIndex].product.id;
     _items.removeAt(itemIndex);
     _notifySafely();
-    await _deleteProductFromRemote(productId);
+
+    final userId = _currentUserId;
+    if (userId == null) return;
+
+    try {
+      await _supabase
+          .from('cart_items')
+          .delete()
+          .eq('id', int.parse(cartItemId));
+    } catch (e) {
+      debugPrint('Error removing from cart: $e');
+      await loadCart();
+    }
   }
 
   Future<void> updateQuantity(String cartItemId, int quantity) async {
@@ -157,46 +196,31 @@ class CartProvider extends ChangeNotifier {
     }
 
     final index = _items.indexWhere((item) => item.id == cartItemId);
-    if (index < 0) {
-      return;
-    }
+    if (index < 0) return;
 
     _items[index].quantity = quantity;
     _notifySafely();
-    await _persistProductQuantity(_items[index].product.id, quantity);
+
+    // Sync with backend
+    try {
+      await _supabase
+          .from('cart_items')
+          .update({'quantity': quantity}).eq('id', int.parse(cartItemId));
+    } catch (e) {
+      debugPrint('Error updating quantity: $e');
+    }
   }
 
   Future<void> incrementQuantity(String cartItemId) async {
     final index = _items.indexWhere((item) => item.id == cartItemId);
-    if (index < 0) {
-      return;
-    }
-
-    _items[index].quantity++;
-    _notifySafely();
-    await _persistProductQuantity(
-      _items[index].product.id,
-      _items[index].quantity,
-    );
+    if (index < 0) return;
+    await updateQuantity(cartItemId, _items[index].quantity + 1);
   }
 
   Future<void> decrementQuantity(String cartItemId) async {
     final index = _items.indexWhere((item) => item.id == cartItemId);
-    if (index < 0) {
-      return;
-    }
-
-    if (_items[index].quantity > 1) {
-      _items[index].quantity--;
-      _notifySafely();
-      await _persistProductQuantity(
-        _items[index].product.id,
-        _items[index].quantity,
-      );
-      return;
-    }
-
-    await removeFromCart(cartItemId);
+    if (index < 0) return;
+    await updateQuantity(cartItemId, _items[index].quantity - 1);
   }
 
   Future<void> clearCart() async {
@@ -204,9 +228,7 @@ class CartProvider extends ChangeNotifier {
     _items.clear();
     _notifySafely();
 
-    if (userId == null) {
-      return;
-    }
+    if (userId == null) return;
 
     try {
       await _supabase.from('cart_items').delete().eq('user_id', userId);
@@ -216,57 +238,9 @@ class CartProvider extends ChangeNotifier {
     }
   }
 
-  bool isInCart(String productId) {
-    return _items.any((item) => item.product.id == productId);
-  }
-
-  int _quantityForProduct(String productId) {
-    final item = _items.firstWhere((entry) => entry.product.id == productId);
-    return item.quantity;
-  }
-
-  Future<void> _persistProductQuantity(String productId, int quantity) async {
-    final userId = _currentUserId;
-    if (userId == null) {
-      _errorMessage = 'Please login to save cart changes';
-      _notifySafely();
-      return;
-    }
-
-    try {
-      await _supabase.from('cart_items').upsert({
-        'user_id': userId,
-        'product_id': int.parse(productId),
-        'quantity': quantity,
-      });
-      _errorMessage = null;
-    } catch (e) {
-      _errorMessage = 'Failed to sync cart: ${e.toString()}';
-      await loadCart();
-    } finally {
-      _notifySafely();
-    }
-  }
-
-  Future<void> _deleteProductFromRemote(String productId) async {
-    final userId = _currentUserId;
-    if (userId == null) {
-      return;
-    }
-
-    try {
-      await _supabase
-          .from('cart_items')
-          .delete()
-          .eq('user_id', userId)
-          .eq('product_id', int.parse(productId));
-      _errorMessage = null;
-    } catch (e) {
-      _errorMessage = 'Failed to remove item from cart: ${e.toString()}';
-      await loadCart();
-    } finally {
-      _notifySafely();
-    }
+  bool isInCart(String productId, {String? variantId}) {
+    return _items.any(
+        (item) => item.product.id == productId && item.variantId == variantId);
   }
 
   Future<Product> _buildCartProduct(Map<String, dynamic> productJson) async {
@@ -274,63 +248,55 @@ class CartProvider extends ChangeNotifier {
     String imageUrl = 'lib/images/smartphones/mobile2.jpg';
 
     try {
-      final images = await remoteDataSource.getProductImages(
-        int.parse(productId),
-      );
-      if (images.isNotEmpty) {
-        imageUrl = images.first;
-      }
-    } catch (_) {
-      // Keep fallback image.
-    }
+      final images =
+          await remoteDataSource.getProductImages(int.parse(productId));
+      if (images.isNotEmpty) imageUrl = images.first;
+    } catch (_) {}
 
-    final title =
-        (productJson['title'] ?? productJson['name'] ?? 'Product').toString();
-    final description = (productJson['description'] ?? '').toString();
+    final title = productJson['title']?.toString() ?? 'Product';
     final priceValue = (productJson['price'] as num?)?.toDouble() ?? 0;
-    final discountPercentage =
-        (productJson['discount_percentage'] as num?)?.toDouble() ?? 0;
     final currentPrice = priceValue / 100.0;
-    final originalPrice = discountPercentage > 0
-        ? currentPrice / (1 - (discountPercentage / 100))
-        : null;
+
+    // We build a minimal product with potential variants if available in JSON
+    final variants = (productJson['variants'] as List<dynamic>?)?.map((v) {
+          final variantJson = Map<String, dynamic>.from(v);
+          return ProductVariant(
+            id: variantJson['id'].toString(),
+            price: (variantJson['price'] as num?) != null ? (variantJson['price'] as num).toDouble() / 100.0 : null,
+            stock: (variantJson['stock_quantity'] as num?)?.toInt() ?? 0,
+            imageUrl: variantJson['image_url']?.toString(),
+            attributes: Map<String, String>.from(variantJson['attributes'] ?? {}),
+          );
+        }).toList() ?? [];
 
     return Product(
       id: productId,
       name: title,
-      brand: (productJson['brand'] ?? 'Generic Brand').toString(),
-      description: description,
+      brand: (productJson['brand'] ?? 'Generic').toString(),
+      description: (productJson['description'] ?? '').toString(),
       price: currentPrice,
-      originalPrice: originalPrice,
       imageUrl: imageUrl,
       galleryImages: [imageUrl],
       rating: 4.5,
       reviewCount: 0,
-      reviews: const [],
-      colors: const ['Black', 'White'],
-      storageOptions: const ['128GB', '256GB'],
-      features: [description],
+      variants: variants,
+      features: [],
       category: (productJson['category'] ?? 'Electronics').toString(),
-      isOnSale: discountPercentage > 0,
+      stock: (productJson['stock_quantity'] as num?)?.toInt() ?? 0,
+      isActive: productJson['is_active'] ?? true,
     );
   }
 
   void _notifySafely() {
-    if (_isDisposed) {
-      return;
-    }
-
+    if (_isDisposed) return;
     final phase = SchedulerBinding.instance.schedulerPhase;
     if (phase == SchedulerPhase.idle ||
         phase == SchedulerPhase.postFrameCallbacks) {
       notifyListeners();
       return;
     }
-
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (_isDisposed) {
-        return;
-      }
+      if (_isDisposed) return;
       notifyListeners();
     });
   }

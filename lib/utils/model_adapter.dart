@@ -13,20 +13,28 @@ extension ProductEntityToModel on entities.Product {
     return models.Product(
       id: id.toString(),
       name: title,
-      brand: 'Generic Brand', // Not available in entity
+      brand: 'Generic Brand', 
       description: description,
       price: currentPrice,
       originalPrice: originalPrice,
       imageUrl: imageUrl,
-      galleryImages: [imageUrl],
-      rating: 4.5, // Not available in entity
-      reviewCount: 0, // Not available in entity
+      galleryImages: images,
+      rating: 4.5, 
+      reviewCount: 0, 
       reviews: [],
-      colors: const ['Black', 'White'],
-      storageOptions: const ['128GB', '256GB'],
+      variants: variants
+          .map((v) => models.ProductVariant(
+                id: v.id,
+                price: v.price / 100.0,
+                stock: v.stock,
+                imageUrl: v.imageUrl,
+                attributes: v.attributes,
+              ))
+          .toList(),
       features: [description],
       category: 'Electronics',
-      isOnSale: hasDiscount,
+      stock: stock,
+      isActive: isActive,
     );
   }
 }

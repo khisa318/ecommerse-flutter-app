@@ -1,91 +1,80 @@
 import 'package:flutter/material.dart';
-import '../models/order.dart';
+import 'package:provider/provider.dart';
+import '../domain/entities/entities.dart' as entities;
+import '../providers/sync_provider.dart';
 import '../utils/currency.dart';
 import '../utils/theme.dart';
 
 class OrderHistoryScreen extends StatelessWidget {
   const OrderHistoryScreen({super.key});
 
-  // Mock orders data
-  List<Order> get _mockOrders => [
-        Order(
-          id: 'ORD001',
-          items: [], // Would be populated from cart items
-          totalAmount: 1399.99,
-          status: 'delivered',
-          orderDate: DateTime.now().subtract(const Duration(days: 5)),
-          shippingAddress: '123 Main St, City, Country',
-          paymentMethod: 'Credit Card ****1234',
-        ),
-        Order(
-          id: 'ORD002',
-          items: [],
-          totalAmount: 249.99,
-          status: 'shipped',
-          orderDate: DateTime.now().subtract(const Duration(days: 2)),
-          shippingAddress: '123 Main St, City, Country',
-          paymentMethod: 'PayPal',
-        ),
-        Order(
-          id: 'ORD003',
-          items: [],
-          totalAmount: 99.99,
-          status: 'pending',
-          orderDate: DateTime.now().subtract(const Duration(hours: 12)),
-          shippingAddress: '123 Main St, City, Country',
-          paymentMethod: 'Credit Card ****1234',
-        ),
-      ];
-
   @override
   Widget build(BuildContext context) {
+    final syncProvider = context.watch<SyncProvider>();
+    final orders = syncProvider.orders;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: const Text('My Orders'),
         backgroundColor: AppTheme.surface,
         elevation: 0,
+        actions: [
+          if (syncProvider.isSyncingOrders)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+        ],
       ),
-      body: _mockOrders.isEmpty
-          ? _buildEmptyState(context)
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _mockOrders.length,
-              itemBuilder: (context, index) {
-                return _buildOrderCard(_mockOrders[index]);
-              },
-            ),
+      body: RefreshIndicator(
+        onRefresh: () => syncProvider.syncOrders(force: true),
+        child: orders.isEmpty
+            ? _buildEmptyState(context, syncProvider.isSyncingOrders)
+            : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: orders.length,
+                itemBuilder: (context, index) {
+                  return _buildOrderCard(orders[index]);
+                },
+              ),
+      ),
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, bool isLoading) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.shopping_bag_outlined,
-            size: 100,
-            color: AppTheme.textMuted,
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'No orders yet',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your order history will appear here',
-            style: TextStyle(color: AppTheme.textSecondary),
-          ),
+          if (isLoading)
+            const CircularProgressIndicator()
+          else ...[
+            Icon(
+              Icons.shopping_bag_outlined,
+              size: 100,
+              color: AppTheme.textMuted,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No orders yet',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your order history will appear here',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+          ]
         ],
       ),
     );
   }
 
-  Widget _buildOrderCard(Order order) {
+  Widget _buildOrderCard(entities.Order order) {
     Color statusColor;
-    switch (order.status) {
+    switch (order.status.toLowerCase()) {
       case 'delivered':
         statusColor = AppTheme.accentGreen;
         break;
@@ -147,7 +136,7 @@ class OrderHistoryScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Ordered on ${order.orderDate.day}/${order.orderDate.month}/${order.orderDate.year}',
+              'Ordered on ${order.createdAt.day}/${order.createdAt.month}/${order.createdAt.year}',
               style: TextStyle(
                 color: AppTheme.textSecondary,
                 fontSize: 14,
@@ -157,14 +146,14 @@ class OrderHistoryScreen extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  Icons.location_on,
+                  Icons.receipt_long,
                   size: 16,
                   color: AppTheme.textMuted,
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    order.shippingAddress,
+                    '${order.items.length} items',
                     style: TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 14,
@@ -175,30 +164,12 @@ class OrderHistoryScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  Icons.payment,
-                  size: 16,
-                  color: AppTheme.textMuted,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  order.paymentMethod,
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  formatKsh(order.totalAmount),
+                  formatKsh((order.totalPrice / 100).toDouble()),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -207,7 +178,7 @@ class OrderHistoryScreen extends StatelessWidget {
                 ),
                 TextButton(
                   onPressed: () {
-                    // Navigate to order details
+                    // Navigate to order details if there was a detail screen
                   },
                   child: const Text('View Details'),
                 ),
@@ -219,3 +190,4 @@ class OrderHistoryScreen extends StatelessWidget {
     );
   }
 }
+

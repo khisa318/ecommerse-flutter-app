@@ -109,8 +109,7 @@ class WishlistProvider with ChangeNotifier {
 
     final entity = dto.toEntity(
       imageUrl: imageUrl,
-      colors: ['Black', 'White', 'Blue'],
-      storageOptions: ['64GB', '128GB', '256GB'],
+      images: [imageUrl],
     );
 
     return entity.toModel();

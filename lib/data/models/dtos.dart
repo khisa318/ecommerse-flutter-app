@@ -11,6 +11,8 @@ class ProductDTO {
   final double? discount_percentage;
   final bool is_active;
   final DateTime created_at;
+  final List<String>? images;
+  final List<ProductVariantDTO>? variants;
 
   ProductDTO({
     required this.id,
@@ -22,13 +24,17 @@ class ProductDTO {
     this.discount_percentage,
     required this.is_active,
     required this.created_at,
+    this.images,
+    this.variants,
   });
 
   /// Convert from JSON (Supabase response)
   factory ProductDTO.fromJson(Map<String, dynamic> json) {
     try {
-      print(
-          '   📋 Parsing ProductDTO from JSON with keys: ${json.keys.toList()}');
+      final variantsJson = json['variants'] as List<dynamic>?;
+      final variants = variantsJson
+          ?.map((v) => ProductVariantDTO.fromJson(v as Map<String, dynamic>))
+          .toList();
 
       return ProductDTO(
         id: _asInt(json['id']),
@@ -40,16 +46,16 @@ class ProductDTO {
         discount_percentage: _asDoubleOrNull(json['discount_percentage']),
         is_active: _asBool(json['is_active']),
         created_at: _asDateTime(json['created_at']),
+        images:
+            json['images'] != null ? List<String>.from(json['images']) : null,
+        variants: variants,
       );
     } catch (e) {
       print('   ❌ ProductDTO parsing error: $e');
-      print('   ❌ JSON keys available: ${json.keys.toList()}');
-      print('   ❌ JSON values: $json');
       rethrow;
     }
   }
 
-  /// Convert to JSON (for sending to Supabase)
   Map<String, dynamic> toJson() {
     return {
       'title': title,
@@ -59,14 +65,14 @@ class ProductDTO {
       'category_id': category_id,
       'discount_percentage': discount_percentage,
       'is_active': is_active,
+      'images': images,
     };
   }
 
-  /// Convert DTO to Entity
   Product toEntity({
     required String imageUrl,
-    required List<String> colors,
-    required List<String> storageOptions,
+    required List<String> images,
+    List<ProductVariant>? variants,
   }) {
     return Product(
       id: id,
@@ -79,8 +85,9 @@ class ProductDTO {
       isActive: is_active,
       createdAt: created_at,
       imageUrl: imageUrl,
-      colors: colors,
-      storageOptions: storageOptions,
+      images: images,
+      variants:
+          variants ?? this.variants?.map((v) => v.toEntity()).toList() ?? [],
     );
   }
 
@@ -112,6 +119,42 @@ class ProductDTO {
       return DateTime.now();
     }
     return DateTime.tryParse(value.toString()) ?? DateTime.now();
+  }
+}
+
+class ProductVariantDTO {
+  final String id;
+  final int price;
+  final int stock;
+  final String? image_url;
+  final Map<String, String> attributes;
+
+  ProductVariantDTO({
+    required this.id,
+    required this.price,
+    required this.stock,
+    this.image_url,
+    required this.attributes,
+  });
+
+  factory ProductVariantDTO.fromJson(Map<String, dynamic> json) {
+    return ProductVariantDTO(
+      id: json['id'].toString(),
+      price: (json['price'] as num?)?.toInt() ?? 0,
+      stock: (json['stock'] as num?)?.toInt() ?? 0,
+      image_url: json['image_url'] as String?,
+      attributes: Map<String, String>.from(json['attributes'] ?? {}),
+    );
+  }
+
+  ProductVariant toEntity() {
+    return ProductVariant(
+      id: id,
+      price: price,
+      stock: stock,
+      imageUrl: image_url,
+      attributes: attributes,
+    );
   }
 }
 
@@ -429,6 +472,62 @@ class AddressDTO {
       isDefault: is_default,
       createdAt: created_at,
       updatedAt: updated_at,
+    );
+  }
+}
+
+class InboxMessageDTO {
+  final String id;
+  final String userId;
+  final String title;
+  final String body;
+  final String category;
+  final bool isRead;
+  final DateTime createdAt;
+
+  InboxMessageDTO({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.body,
+    required this.category,
+    required this.isRead,
+    required this.createdAt,
+  });
+
+  factory InboxMessageDTO.fromJson(Map<String, dynamic> json) {
+    return InboxMessageDTO(
+      id: json['id'] as String,
+      userId: json['user_id'] as String,
+      title: json['title'] as String,
+      body: json['body'] as String,
+      category: json['category'] as String? ?? 'General',
+      isRead: json['is_read'] as bool? ?? false,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'title': title,
+      'body': body,
+      'category': category,
+      'is_read': isRead,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+
+  InboxMessage toEntity() {
+    return InboxMessage(
+      id: id,
+      userId: userId,
+      title: title,
+      body: body,
+      category: category,
+      isRead: isRead,
+      createdAt: createdAt,
     );
   }
 }
