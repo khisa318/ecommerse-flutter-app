@@ -101,10 +101,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final checkoutProvider = context.watch<CheckoutProvider>();
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Checkout'),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
       ),
       body: SafeArea(

@@ -17,6 +17,8 @@ class ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final wishlistProvider = context.watch<WishlistProvider>();
     final isInWishlist = wishlistProvider.isInWishlist(product.id);
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
 
     return GestureDetector(
       onTap: () {
@@ -28,13 +30,13 @@ class ProductCard extends StatelessWidget {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: colors.shadowColor,
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -43,16 +45,17 @@ class ProductCard extends StatelessWidget {
           children: [
             // Product Image
             Expanded(
-              flex: 3,
+              flex: 4,
               child: Stack(
                 children: [
                   Hero(
                     tag: 'product_${product.id}',
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(20),
+                        top: Radius.circular(24),
                       ),
                       child: _buildProductImage(
+                        context: context,
                         width: double.infinity,
                         fit: BoxFit.cover,
                       ),
@@ -105,11 +108,11 @@ class ProductCard extends StatelessWidget {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: colors.secondarySurface,
                           borderRadius: BorderRadius.circular(10),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: colors.shadowColor,
                               blurRadius: 8,
                             ),
                           ],
@@ -131,45 +134,47 @@ class ProductCard extends StatelessWidget {
             Expanded(
               flex: 2,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       product.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: colors.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 4),
                     Text(
                       product.brand,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textMuted,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colors.textSecondary,
                       ),
                     ),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Text(
                           formatKsh(product.price),
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
                             color: AppTheme.primaryColor,
                           ),
                         ),
                         if (product.originalPrice != null) ...[
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
                           Text(
                             formatKsh(product.originalPrice!),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textMuted,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colors.textDisabled,
                               decoration: TextDecoration.lineThrough,
                             ),
                           ),
@@ -187,15 +192,18 @@ class ProductCard extends StatelessWidget {
   }
 
   Widget _buildProductImage({
+    required BuildContext context,
     required double width,
     required BoxFit fit,
   }) {
     final imagePath = product.imageUrl;
+    final colors = AppTheme.colors(context);
+    // Image placeholder follows the active theme surface colors.
     final errorWidget = Container(
-      color: AppTheme.background,
-      child: const Icon(
+      color: colors.secondarySurface,
+      child: Icon(
         Icons.image_not_supported,
-        color: AppTheme.textMuted,
+        color: colors.textDisabled,
       ),
     );
 

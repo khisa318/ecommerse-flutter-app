@@ -39,18 +39,54 @@ class SyncRepository {
   // ====== ORDERS ======
   Future<List<Order>> getOrders(String userId, {DateTime? after}) async {
     try {
-      // For orders we only pull basic info or full if needed.
-      var query = supabaseClient.from('orders').select('*, order_items(*)').eq('user_id', userId);
+      // Fetch orders with their items
+      var query = supabaseClient
+          .from('orders')
+          .select('*, order_items(*)')
+          .eq('user_id', userId);
+      
       if (after != null) {
         query = query.gt('updated_at', after.toIso8601String());
       }
+      
       final response = await query.order('updated_at', ascending: false);
-      return (response as List)
-          .map((json) => OrderDTO.fromJson(json).toEntity(items: [])) // Items mapped separately if needed
-          .toList();
+      
+      return (response as List).map((json) {
+        // Parse order items
+        final itemsJson = json['order_items'] as List<dynamic>? ?? [];
+        final items = itemsJson.map((itemJson) => 
+          OrderItemDTO.fromJson(itemJson as Map<String, dynamic>).toEntity()
+        ).toList();
+        
+        return OrderDTO.fromJson(json).toEntity(items: items);
+      }).toList();
     } catch (e) {
       print('Failed to sync orders: $e');
       return [];
+    }
+  }
+
+  // Create a new order with items
+  Future<int?> createOrder({
+    required String userId,
+    required int totalPrice,
+    required Map<String, dynamic> shippingAddress,
+    required String paymentMethod,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final response = await supabaseClient.rpc('create_order_with_items', params: {
+        'p_user_id': userId,
+        'p_total_price': totalPrice,
+        'p_shipping_address': shippingAddress,
+        'p_payment_method': paymentMethod,
+        'p_items': items,
+      });
+      
+      return response as int?;
+    } catch (e) {
+      print('Failed to create order: $e');
+      return null;
     }
   }
 
@@ -120,6 +156,39 @@ class SyncRepository {
     }
   }
 
+  // ====== SUPPORT TICKETS ======
+  Future<List<Map<String, dynamic>>> getSupportTickets(String userId) async {
+    try {
+      final response = await supabaseClient
+          .from('support_tickets')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return (response as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      print('Failed to fetch support tickets: $e');
+      return [];
+    }
+  }
+
+  Future<void> createSupportTicket({
+    required String userId,
+    required String topic,
+    required String message,
+  }) async {
+    try {
+      await supabaseClient.from('support_tickets').insert({
+        'user_id': userId,
+        'topic': topic,
+        'message': message,
+        'status': 'open',
+      });
+    } catch (e) {
+      print('Failed to create support ticket: $e');
+      rethrow;
+    }
+  }
+
   // ====== LOCAL CACHE ======
   
   // Generic key storage
@@ -158,6 +227,10 @@ class SyncRepository {
       'id': o.id, 'user_id': o.userId, 'total_price': o.totalPrice,
       'status': o.status, 'created_at': o.createdAt.toIso8601String(),
       'updated_at': o.updatedAt.toIso8601String(),
+      'items': o.items.map((i) => {
+        'id': i.id, 'order_id': i.orderId, 'product_id': i.productId,
+        'quantity': i.quantity, 'price_at_purchase': i.priceAtPurchase,
+      }).toList(),
     }).toList();
     _saveLocal('sync_orders', jsonList);
   }
@@ -165,7 +238,11 @@ class SyncRepository {
   List<Order>? getCachedOrders() {
     final list = _loadLocal('sync_orders');
     if (list == null) return null;
-    return list.map((json) => OrderDTO.fromJson(json).toEntity(items: [])).toList();
+    return list.map((json) {
+      final itemsJson = json['items'] as List<dynamic>? ?? [];
+      final items = itemsJson.map((i) => OrderItemDTO.fromJson(i).toEntity()).toList();
+      return OrderDTO.fromJson(json).toEntity(items: items);
+    }).toList();
   }
 
   // Reviews Cache

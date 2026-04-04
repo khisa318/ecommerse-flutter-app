@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../providers/auth_provider.dart';
 import '../utils/account_menu_card.dart';
 import '../utils/account_section_card.dart';
 import '../utils/theme.dart';
@@ -13,6 +16,7 @@ class CustomerServiceScreen extends StatefulWidget {
 class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
   final TextEditingController _messageController = TextEditingController();
   String _selectedTopic = 'Orders';
+  bool _isSubmitting = false;
 
   final List<String> _topics = const [
     'Orders',
@@ -46,7 +50,7 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
     super.dispose();
   }
 
-  void _submitTicket() {
+  Future<void> _submitTicket() async {
     final message = _messageController.text.trim();
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -58,13 +62,68 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
       return;
     }
 
-    _messageController.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Support request sent for $_selectedTopic.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    final authProvider = context.read<AuthProvider>();
+    if (authProvider.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login to submit a support ticket.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final userId = authProvider.currentUser!.id;
+
+      await supabase.from('support_tickets').insert({
+        'user_id': userId,
+        'topic': _selectedTopic,
+        'message': message,
+        'status': 'open',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      // Also create an inbox message for the user
+      await supabase.from('inbox_messages').insert({
+        'user_id': userId,
+        'title': 'Support Ticket: $_selectedTopic',
+        'body': 'Your support request has been received. We will get back to you soon.',
+        'category': 'support',
+        'is_read': false,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      _messageController.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Support ticket submitted successfully!'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to submit ticket: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   void _showContactAction(String label) {
@@ -80,15 +139,17 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Customer Service'),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        elevation: 0,
       ),
       body: ListView(
         children: [
+          // Header Banner
           Container(
-            margin: const EdgeInsets.all(20),
+            margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
@@ -100,33 +161,43 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                   AppTheme.primaryLight,
                 ],
               ),
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Need Help Fast?',
+                  'Need Help?',
                   style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Reach Cyberspex support for account setup, order guidance, and product help in one place.',
+                  'Our support team is here to help you with any questions about your orders, products, or account.',
                   style: TextStyle(
                     height: 1.5,
                     color: Color(0xFFE6F0FF),
+                    fontSize: 14,
                   ),
                 ),
               ],
             ),
           ),
+
+          // Quick Support Actions
           AccountSectionCard(
             title: 'Quick Support',
-            subtitle: 'Choose the support path that fits your issue best.',
+            subtitle: 'Choose how you want to reach us.',
             child: Column(
               children: [
                 Row(
@@ -141,7 +212,7 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildActionButton(
-                        label: 'Call Support',
+                        label: 'Call Us',
                         icon: Icons.call_outlined,
                         color: AppTheme.accentGreen,
                       ),
@@ -153,7 +224,7 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                   children: [
                     Expanded(
                       child: _buildActionButton(
-                        label: 'Email Help',
+                        label: 'Email',
                         icon: Icons.mail_outline,
                         color: AppTheme.primaryColor,
                       ),
@@ -161,7 +232,7 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildActionButton(
-                        label: 'Open Inbox',
+                        label: 'Inbox',
                         icon: Icons.inbox_outlined,
                         color: const Color(0xFF8B5CF6),
                         onTap: () => Navigator.pushNamed(context, '/inbox'),
@@ -172,23 +243,26 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
               ],
             ),
           ),
+
+          // Submit Support Ticket
           AccountSectionCard(
-            title: 'Submit A Support Ticket',
-            subtitle:
-                'Leave a message and keep a record of the issue for follow-up.',
+            title: 'Submit a Support Ticket',
+            subtitle: 'Send us a message and we\'ll respond within 24 hours.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Topic Dropdown
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedTopic,
+                  value: _selectedTopic,
                   decoration: InputDecoration(
-                    labelText: 'Help topic',
+                    labelText: 'Topic',
                     filled: true,
                     fillColor: const Color(0xFFF7FAFF),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide.none,
                     ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                   items: _topics
                       .map(
@@ -199,15 +273,14 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                       )
                       .toList(),
                   onChanged: (value) {
-                    if (value == null) {
-                      return;
+                    if (value != null) {
+                      setState(() => _selectedTopic = value);
                     }
-                    setState(() {
-                      _selectedTopic = value;
-                    });
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
+
+                // Message Text Field
                 TextField(
                   controller: _messageController,
                   maxLines: 5,
@@ -217,27 +290,52 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                     filled: true,
                     fillColor: const Color(0xFFF7FAFF),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide.none,
                     ),
+                    contentPadding: const EdgeInsets.all(16),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+
+                // Submit Button
                 SizedBox(
                   width: double.infinity,
+                  height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _submitTicket,
-                    icon: const Icon(Icons.send_outlined),
-                    label: const Text('Send Ticket'),
+                    onPressed: _isSubmitting ? null : _submitTicket,
+                    icon: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_outlined),
+                    label: Text(_isSubmitting ? 'Sending...' : 'Send Ticket'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+
+          // FAQ Section
           AccountSectionCard(
             title: 'Frequently Asked Questions',
-            subtitle:
-                'Quick answers for the most common account and shopping issues.',
+            subtitle: 'Quick answers to common questions.',
             child: Column(
               children: _faqItems
                   .map(
@@ -245,7 +343,7 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                       margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: ExpansionTile(
                         tilePadding: const EdgeInsets.symmetric(
@@ -257,7 +355,8 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                         title: Text(
                           faq.question,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
                             color: AppTheme.textPrimary,
                           ),
                         ),
@@ -279,25 +378,27 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
                   .toList(),
             ),
           ),
+
+          // Navigation Links
           AccountMenuCard(
             items: [
               AccountMenuItemData(
                 icon: Icons.shopping_bag_outlined,
                 title: 'My Orders',
-                subtitle: 'Review active and completed orders',
+                subtitle: 'View your order history',
                 color: AppTheme.primaryColor,
                 onTap: () => Navigator.pushNamed(context, '/orders'),
               ),
               AccountMenuItemData(
                 icon: Icons.rate_review_outlined,
                 title: 'Ratings & Reviews',
-                subtitle: 'Manage product feedback you have left',
+                subtitle: 'Manage your reviews',
                 color: AppTheme.accentOrange,
                 onTap: () => Navigator.pushNamed(context, '/reviews'),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -310,27 +411,28 @@ class _CustomerServiceScreenState extends State<CustomerServiceScreen> {
     VoidCallback? onTap,
   }) {
     return InkWell(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap ?? () => _showContactAction(label),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(18),
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: color.withValues(alpha: 0.2),
+            color: color.withOpacity(0.2),
           ),
         ),
         child: Column(
           children: [
-            Icon(icon, color: color),
+            Icon(icon, color: color, size: 28),
             const SizedBox(height: 10),
             Text(
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
                 color: color,
+                fontSize: 13,
               ),
             ),
           ],

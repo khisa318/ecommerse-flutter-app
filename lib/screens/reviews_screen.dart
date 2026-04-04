@@ -148,10 +148,10 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     final reviews = syncProvider.reviews;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Ratings & Reviews'),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         actions: [
           if (syncProvider.isSyncingReviews)
             const Padding(
@@ -368,4 +368,3 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     );
   }
 }
-

@@ -14,10 +14,10 @@ class OrderHistoryScreen extends StatelessWidget {
     final orders = syncProvider.orders;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('My Orders'),
-        backgroundColor: AppTheme.surface,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
         actions: [
           if (syncProvider.isSyncingOrders)
@@ -190,4 +190,3 @@ class OrderHistoryScreen extends StatelessWidget {
     );
   }
 }
-

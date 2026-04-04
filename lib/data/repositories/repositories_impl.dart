@@ -366,8 +366,8 @@ class UserProfileRepositoryImpl implements UserProfileRepository {
   @override
   Future<void> updateUserProfile({
     required String userId,
-    String? name,
-    String? email,
+    required String name,
+    required String email,
     String? phone,
     String? address,
   }) async {

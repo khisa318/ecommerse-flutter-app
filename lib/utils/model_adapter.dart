@@ -4,7 +4,7 @@ import '../models/product.dart' as models;
 
 extension ProductEntityToModel on entities.Product {
   /// Convert domain entity Product to legacy Product model
-  models.Product toModel() {
+  models.Product toModel({String? categoryName}) {
     final hasDiscount = discountPercentage > 0;
     final currentPrice = price / 100.0;
     final originalPrice =
@@ -32,7 +32,7 @@ extension ProductEntityToModel on entities.Product {
               ))
           .toList(),
       features: [description],
-      category: 'Electronics',
+      category: categoryName ?? 'Electronics',
       stock: stock,
       isActive: isActive,
     );

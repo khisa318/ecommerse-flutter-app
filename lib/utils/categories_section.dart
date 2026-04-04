@@ -11,17 +11,19 @@ class CategoriesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.colors(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
           child: Text(
             'Categories',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+              color: colors.textPrimary,
             ),
           ),
         ),
@@ -33,7 +35,7 @@ class CategoriesSection extends StatelessWidget {
             itemCount: categories.length,
             itemBuilder: (context, index) {
               final category = categories[index];
-              return _buildCategoryItem(category);
+              return _buildCategoryItem(context, category);
             },
           ),
         ),
@@ -41,7 +43,8 @@ class CategoriesSection extends StatelessWidget {
     );
   }
 
-  Widget _buildCategoryItem(Map<String, dynamic> category) {
+  Widget _buildCategoryItem(BuildContext context, Map<String, dynamic> category) {
+    final colors = AppTheme.colors(context);
     return Container(
       width: 80,
       margin: const EdgeInsets.only(right: 16),
@@ -63,10 +66,10 @@ class CategoriesSection extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             category['name'],
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: AppTheme.textSecondary,
+              color: colors.textSecondary,
             ),
             textAlign: TextAlign.center,
             maxLines: 1,

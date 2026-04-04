@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
         productProvider.products.isEmpty;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -78,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverToBoxAdapter(
               child: GestureDetector(
                 onTap: () {
-                  // Navigate to Shop for search
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const ShopScreen()),
@@ -150,6 +149,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
+            if (productProvider.errorMessage != null)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.red.shade100),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_off_rounded, color: Colors.red.shade400),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          productProvider.errorMessage!.replaceAll('Exception: ', ''),
+                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => productProvider.getProducts(refresh: true),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             // Flash Deals Section
             SliverToBoxAdapter(
               child: FlashDealsHeader(
@@ -184,24 +216,26 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    childAspectRatio: 0.65,
+                    childAspectRatio: 0.55,
                     crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
+                    mainAxisSpacing: 20,
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) =>
-                        ProductCard(product: flashDeals[index].toModel()),
+                        ProductCard(product: flashDeals[index].toModel(
+                          categoryName: productProvider.getCategoryName(flashDeals[index].categoryId)
+                        )),
                     childCount: flashDeals.length,
                   ),
                 ),
               ),
 
             const SliverToBoxAdapter(
-              child: SizedBox(height: 48),
+              child: SizedBox(height: 32),
             ),
           ],
         ),

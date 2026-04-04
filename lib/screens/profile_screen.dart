@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/sync_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/account_menu_card.dart';
+import '../utils/account_section_card.dart';
 import '../utils/cyberspex_branding.dart';
 import '../utils/theme.dart';
 
@@ -17,6 +19,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _emailController;
   late final TextEditingController _phoneController;
+  late final TextEditingController _addressController;
   bool _isEditing = false;
 
   @override
@@ -25,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController = TextEditingController();
     _emailController = TextEditingController();
     _phoneController = TextEditingController();
+    _addressController = TextEditingController();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncFromProvider();
@@ -38,6 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController.text = user.name;
     _emailController.text = user.email;
     _phoneController.text = user.phone ?? '';
+    _addressController.text = user.address ?? '';
   }
 
   Future<void> _saveProfile() async {
@@ -50,6 +55,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         phone: _phoneController.text.trim().isEmpty
             ? null
             : _phoneController.text.trim(),
+        address: _addressController.text.trim().isEmpty
+            ? null
+            : _addressController.text.trim(),
       );
 
       if (!mounted) return;
@@ -109,16 +117,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _handleDeleteAccount() async {
+    final navigator = Navigator.of(context);
+    final authProvider = context.read<AuthProvider>();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete account'),
+        content: const Text(
+          'This will permanently remove your Cyberspex account and profile data. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.accentRed,
+            ),
+            onPressed: authProvider.isLoading
+                ? null
+                : () async {
+                    final success = await authProvider.deleteAccount();
+                    if (!mounted) return;
+                    navigator.pop();
+
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Your account has been deleted'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      navigator.pushNamedAndRemoveUntil(
+                          '/main', (route) => false);
+                      return;
+                    }
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          authProvider.errorMessage ??
+                              'Failed to delete account',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
+
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         final user = authProvider.currentUser;
@@ -127,17 +195,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         if (authProvider.isRestoringSession) {
-          return const Scaffold(
-            backgroundColor: Color(0xFFF4F7FB),
+          return Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
             body: Center(
-              child: CircularProgressIndicator(),
+              child: const CircularProgressIndicator(),
             ),
           );
         }
 
         if (authProvider.hasAuthenticatedSession && user == null) {
           return Scaffold(
-            backgroundColor: const Color(0xFFF4F7FB),
+            backgroundColor: theme.scaffoldBackgroundColor,
             body: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -145,11 +213,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: theme.cardColor,
                       borderRadius: BorderRadius.circular(28),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
+                          color: colors.shadowColor,
                           blurRadius: 18,
                           offset: const Offset(0, 8),
                         ),
@@ -203,10 +271,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F7FB),
+          backgroundColor: theme.scaffoldBackgroundColor,
           body: SafeArea(
             child: RefreshIndicator(
-              onRefresh: () => Provider.of<SyncProvider>(context, listen: false).syncAll(),
+              onRefresh: () =>
+                  Provider.of<SyncProvider>(context, listen: false).syncAll(),
               child: CustomScrollView(
                 slivers: [
                   SliverToBoxAdapter(
@@ -214,13 +283,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   SliverToBoxAdapter(
                     child: Consumer<SyncProvider>(
-                      builder: (context, sync, child) => _buildStatsSection(sync),
+                      builder: (context, sync, child) =>
+                          _buildStatsSection(sync),
                     ),
                   ),
                   if (_isEditing)
                     SliverToBoxAdapter(
                       child: _buildEditSection(authProvider),
                     ),
+                  SliverToBoxAdapter(
+                    child: _buildThemeSection(),
+                  ),
                   SliverToBoxAdapter(
                     child: _buildMenuSection(),
                   ),
@@ -237,8 +310,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildLoggedOutState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -250,7 +326,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: theme.cardColor,
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
@@ -281,22 +357,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'Welcome To Your Account',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
+                        color: colors.textPrimary,
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 10),
-                    const Text(
+                    Text(
                       'Login to manage your profile, saved gadgets, and support options.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         height: 1.5,
-                        color: AppTheme.textSecondary,
+                        color: colors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -365,11 +441,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   compact: true,
                 ),
               ),
-              if (syncProvider.isSyncingInbox || syncProvider.isSyncingOrders || syncProvider.isSyncingReviews)
-                 const Padding(
-                   padding: EdgeInsets.only(right: 8.0),
-                   child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                 ),
+              if (syncProvider.isSyncingInbox ||
+                  syncProvider.isSyncingOrders ||
+                  syncProvider.isSyncingReviews)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8.0),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2)),
+                ),
               IconButton(
                 onPressed: authProvider.isLoading
                     ? null
@@ -463,17 +545,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatsSection(SyncProvider sync) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
     final unreadCount = sync.inboxMessages.where((m) => !m.isRead).length;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: colors.shadowColor,
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -486,13 +570,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             width: 1,
             height: 44,
-            color: AppTheme.borderLight,
+            color: colors.borderLight,
           ),
           _buildStatItem(unreadCount.toString(), 'Inbox'),
           Container(
             width: 1,
             height: 44,
-            color: AppTheme.borderLight,
+            color: colors.borderLight,
           ),
           _buildStatItem(sync.reviews.length.toString(), 'Reviews'),
         ],
@@ -501,6 +585,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatItem(String value, String label) {
+    final colors = AppTheme.colors(context);
     return Column(
       children: [
         Text(
@@ -514,9 +599,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
-            color: AppTheme.textSecondary,
+            color: colors.textSecondary,
           ),
         ),
       ],
@@ -524,15 +609,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildEditSection(AuthProvider authProvider) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: colors.shadowColor,
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -541,12 +628,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Edit Simple Profile',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: AppTheme.textPrimary,
+              color: colors.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -570,6 +657,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 18),
+          _buildField(
+            controller: _addressController,
+            label: 'Address',
+            icon: Icons.home_outlined,
+            keyboardType: TextInputType.streetAddress,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -583,6 +678,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   : const Text('Save Changes'),
             ),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: authProvider.isLoading ? null : _handleDeleteAccount,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.accentRed,
+                side: const BorderSide(color: AppTheme.accentRed),
+              ),
+              child: const Text('Delete Account'),
+            ),
+          ),
         ],
       ),
     );
@@ -593,15 +700,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String label,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
   }) {
+    final colors = AppTheme.colors(context);
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      minLines: maxLines > 1 ? maxLines : 1,
+      maxLines: maxLines,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: AppTheme.primaryColor),
         filled: true,
-        fillColor: const Color(0xFFF7FAFF),
+        fillColor: colors.searchBackground,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
@@ -617,6 +728,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
             width: 1.5,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildThemeSection() {
+    final themeProvider = context.watch<ThemeProvider>();
+    final colors = AppTheme.colors(context);
+
+    return AccountSectionCard(
+      title: 'Appearance',
+      subtitle: 'Switch instantly between light and dark mode.',
+      actions: [
+        Switch(
+          value: themeProvider.isDarkMode,
+          onChanged: (value) =>
+              context.read<ThemeProvider>().setDarkMode(value),
+        ),
+      ],
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.dark_mode_outlined,
+              color: AppTheme.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  themeProvider.isDarkMode ? 'Dark Mode' : 'Light Mode',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Your preference is saved automatically on this device.',
+                  style: TextStyle(
+                    color: colors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

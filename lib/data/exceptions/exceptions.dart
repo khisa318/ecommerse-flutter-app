@@ -1,22 +1,39 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+import 'dart:io';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
+
 /// Custom Exception Classes for Error Handling
 
 /// Base exception for all data layer errors
 abstract class AppException implements Exception {
   final String message;
   AppException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 /// Network/connectivity errors
 class NetworkException extends AppException {
   NetworkException(String message) : super(message);
+
+  factory NetworkException.unavailable() {
+    return NetworkException('Unable to connect. Please check your internet.');
+  }
+
+  factory NetworkException.timedOut() {
+    return NetworkException('The connection timed out. Please try again.');
+  }
   
   factory NetworkException.from(Object exception) {
-    if (exception.toString().contains('SocketException')) {
-      return NetworkException('No internet connection');
-    } else if (exception.toString().contains('TimeoutException')) {
-      return NetworkException('Request timed out');
+    if (UiSafeErrorMapper.isNetworkError(exception)) {
+      return NetworkException.unavailable();
+    } else if (exception is TimeoutException ||
+        exception.toString().contains('TimeoutException')) {
+      return NetworkException.timedOut();
     }
-    return NetworkException('Network error occurred: ${exception.toString()}');
+    return NetworkException.unavailable();
   }
 }
 
@@ -52,9 +69,9 @@ class DataException extends AppException {
     } else if (exception.toString().contains('400')) {
       return DataException('Invalid request', statusCode: 400);
     } else if (exception.toString().contains('500')) {
-      return DataException('Server error', statusCode: 500);
+      return DataException('Server error. Please try again later.', statusCode: 500);
     }
-    return DataException('Data operation failed: ${exception.toString()}');
+    return DataException('Something went wrong while loading data.');
   }
 }
 
@@ -104,6 +121,70 @@ class BusinessException extends AppException {
   factory BusinessException.invalidOrderStatus(String currentStatus, String attemptedStatus) {
     return BusinessException(
       'Cannot change order status from $currentStatus to $attemptedStatus',
+    );
+  }
+}
+
+class UiSafeErrorMapper {
+  static bool isNetworkError(Object error) {
+    final text = error.toString().toLowerCase();
+    return error is SocketException ||
+        error is sb.AuthRetryableFetchException ||
+        text.contains('socketexception') ||
+        text.contains('clientexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection refused') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection reset by peer') ||
+        text.contains('connection closed') ||
+        text.contains('errno = 101') ||
+        text.contains('errno = 111');
+  }
+
+  static AppException toAppException(
+    Object error, {
+    String? fallbackMessage,
+  }) {
+    if (error is AppException) {
+      return error;
+    }
+
+    if (error is TimeoutException) {
+      return NetworkException.timedOut();
+    }
+
+    if (isNetworkError(error)) {
+      return NetworkException.unavailable();
+    }
+
+    if (error is sb.PostgrestException) {
+      if (error.code == 'PGRST116') {
+        return DataException('The requested record was not found.', statusCode: 404);
+      }
+      return DataException('Unable to load data right now.');
+    }
+
+    if (error is sb.StorageException || error is sb.FunctionException) {
+      return DataException('Service temporarily unavailable. Please try again.');
+    }
+
+    if (error is sb.AuthException) {
+      return AuthException.sessionExpired();
+    }
+
+    return DataException(fallbackMessage ?? 'Something went wrong. Please try again.');
+  }
+
+  static void logTechnicalError(
+    String operation,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    developer.log(
+      '[$operation] $error',
+      name: 'cyberspex.data',
+      error: error,
+      stackTrace: stackTrace,
     );
   }
 }

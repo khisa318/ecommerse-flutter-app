@@ -24,54 +24,82 @@ class SearchBarWidget extends StatefulWidget {
 class _SearchBarWidgetState extends State<SearchBarWidget> {
   @override
   Widget build(BuildContext context) {
+    final colors = AppTheme.colors(context);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
+          // Search Bar
           Container(
+            height: 52,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: colors.searchBackground,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: TextField(
-              controller: widget.searchController,
-              onChanged: widget.onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search products...',
-                hintStyle: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 15,
-                ),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: AppTheme.textMuted,
-                  size: 22,
-                ),
-                suffixIcon: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.tune,
-                    color: AppTheme.primaryColor,
-                    size: 20,
-                  ),
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              border: Border.all(
+                color: colors.borderLight,
+                width: 1,
               ),
             ),
+            child: Row(
+              children: [
+                const SizedBox(width: 16),
+                Icon(
+                  Icons.search,
+                  color: colors.textDisabled,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: widget.searchController,
+                    onChanged: widget.onSearchChanged,
+                    style: TextStyle(color: colors.searchText),
+                    decoration: InputDecoration(
+                      hintText: 'Search products, brands...',
+                      hintStyle: TextStyle(
+                        color: colors.textDisabled,
+                        fontSize: 15,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ),
+                // Filter Button
+                Container(
+                  margin: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: colors.primaryGradient,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Filter',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          // Category Chips
           _buildCategoryFilters(),
         ],
       ),
@@ -80,37 +108,60 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
 
   Widget _buildCategoryFilters() {
     return SizedBox(
-      height: 50,
+      height: 42,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: widget.categories.length,
         itemBuilder: (context, index) {
+          final colors = AppTheme.colors(context);
           final category = widget.categories[index];
           final isSelected = widget.selectedCategory == category['name'] ||
               (widget.selectedCategory == null && category['name'] == 'All');
 
-          return Container(
-            margin: const EdgeInsets.only(right: 12),
-            child: FilterChip(
-              label: Text(category['name']),
-              selected: isSelected,
-              onSelected: (selected) {
-                widget.onCategoryChanged(selected ? category['name'] : null);
-              },
-              backgroundColor: Colors.white,
-              selectedColor: AppTheme.primaryColor.withValues(alpha: 0.1),
-              checkmarkColor: AppTheme.primaryColor,
-              labelStyle: TextStyle(
-                color:
-                    isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
-              shape: RoundedRectangleBorder(
+          return GestureDetector(
+            onTap: () {
+              widget.onCategoryChanged(isSelected ? null : category['name']);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected ? AppTheme.primaryColor : colors.secondarySurface,
                 borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color:
-                      isSelected ? AppTheme.primaryColor : AppTheme.borderLight,
+                border: Border.all(
+                  color: isSelected ? AppTheme.primaryColor : colors.borderLight,
+                  width: 1.5,
                 ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (category['icon'] != null) ...[
+                    Icon(
+                      category['icon'] as IconData,
+                      size: 16,
+                      color: isSelected ? Colors.white : colors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    category['name'],
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : colors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           );

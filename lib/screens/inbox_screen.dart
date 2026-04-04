@@ -25,10 +25,10 @@ class _InboxScreenState extends State<InboxScreen> {
     final unreadCount = messages.where((m) => !m.isRead).length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Inbox'),
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         actions: [
           if (syncProvider.isSyncingInbox)
             const Padding(
@@ -340,4 +340,3 @@ class _InboxScreenState extends State<InboxScreen> {
     return DateFormat('dd/MM').format(dt);
   }
 }
-

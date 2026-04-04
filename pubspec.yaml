@@ -26,6 +26,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: "^0.14.3"
   flutter_lints: ^3.0.0
 
 flutter:
@@ -34,3 +35,11 @@ flutter:
     - lib/images/smartphones/mobile2.jpg
     - lib/images/laptops/laptop1.jpg
     - lib/images/headphones/pods1.jpg
+
+flutter_launcher_icons:
+  android: "launcher_icon" # can be true, false, or a custom name
+  ios: true # can be true, false, or a custom name
+  image_path: "assets/icons/icon.jpeg" # path to your icon
+  # Optional: for Android adaptive icons
+  adaptive_icon_background: "#ffffff"
+

@@ -22,11 +22,17 @@ class AuthProvider with ChangeNotifier {
   String? _errorMessage;
   bool _isGoogleSigningIn = false;
   bool _isRestoringSession = true;
+  bool _isAwaitingEmailVerification = false;
+  String? _pendingVerificationEmail;
+  String? _pendingVerificationName;
 
   local_user.User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   bool get isGoogleSigningIn => _isGoogleSigningIn;
   bool get isRestoringSession => _isRestoringSession;
+  bool get isAwaitingEmailVerification => _isAwaitingEmailVerification;
+  String? get pendingVerificationEmail => _pendingVerificationEmail;
+  String? get pendingVerificationName => _pendingVerificationName;
   bool get hasAuthenticatedSession =>
       Supabase.instance.client.auth.currentUser != null;
   bool get isLoggedIn => _currentUser != null || hasAuthenticatedSession;
@@ -87,6 +93,19 @@ class AuthProvider with ChangeNotifier {
   Future<void> _handleAuthStateChange(AuthState data) async {
     if (data.session?.user != null) {
       final user = data.session!.user;
+      if (!_isEmailVerified(user)) {
+        _currentUser = null;
+        _markEmailVerificationPending(
+          email: user.email,
+          name: _displayNameForAuthUser(user,
+              fallbackName: _pendingVerificationName),
+        );
+        _isRestoringSession = false;
+        _notifySafely();
+        return;
+      }
+
+      _clearPendingVerification();
       await _loadUserProfile(user.id);
       _isRestoringSession = false;
       _notifySafely();
@@ -112,6 +131,20 @@ class AuthProvider with ChangeNotifier {
 
       final user = response.user;
       if (user != null) {
+        if (!_isEmailVerified(user)) {
+          await Supabase.instance.client.auth.signOut();
+          _markEmailVerificationPending(
+            email: email.trim(),
+            name: _pendingVerificationName,
+          );
+          _errorMessage = 'Please verify your email before logging in.';
+          _isLoading = false;
+          _isRestoringSession = false;
+          notifyListeners();
+          return false;
+        }
+
+        _clearPendingVerification();
         await _loadUserProfile(user.id);
         _isLoading = false;
         _isRestoringSession = false;
@@ -120,7 +153,10 @@ class AuthProvider with ChangeNotifier {
       }
       return false;
     } catch (e) {
-      if (e.toString().contains('Invalid login credentials') ||
+      if (e.toString().contains('Email not confirmed') ||
+          e.toString().contains('email_not_confirmed')) {
+        _errorMessage = 'Please verify your email before logging in.';
+      } else if (e.toString().contains('Invalid login credentials') ||
           e.toString().contains('invalid_credentials')) {
         _errorMessage = 'Invalid email or password';
       } else {
@@ -138,16 +174,29 @@ class AuthProvider with ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? phone,
+    String? address,
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final trimmedName = name.trim();
+      final trimmedEmail = email.trim();
+      final trimmedPhone = phone?.trim();
+      final trimmedAddress = address?.trim();
+
       // Create auth account
       final response = await Supabase.instance.client.auth.signUp(
-        email: email,
+        email: trimmedEmail,
         password: password,
+        data: {
+          'full_name': trimmedName,
+          'name': trimmedName,
+          'phone': trimmedPhone,
+          'address': trimmedAddress,
+        },
       );
 
       final user = response.user;
@@ -156,8 +205,14 @@ class AuthProvider with ChangeNotifier {
         try {
           await remoteDataSource.upsertUserProfile(
             userId: user.id,
-            email: email,
-            name: name,
+            email: trimmedEmail,
+            name: trimmedName,
+            phone: trimmedPhone != null && trimmedPhone.isNotEmpty
+                ? trimmedPhone
+                : null,
+            address: trimmedAddress != null && trimmedAddress.isNotEmpty
+                ? trimmedAddress
+                : null,
           );
         } catch (profileError) {
           debugPrint(
@@ -165,7 +220,19 @@ class AuthProvider with ChangeNotifier {
           // Continue anyway - profile might already exist
         }
 
-        // Load the created profile
+        if (!_isEmailVerified(user)) {
+          _currentUser = null;
+          _markEmailVerificationPending(
+            email: trimmedEmail,
+            name: trimmedName,
+          );
+          _isLoading = false;
+          _isRestoringSession = false;
+          notifyListeners();
+          return true;
+        }
+
+        _clearPendingVerification();
         await _loadUserProfile(user.id);
         _isLoading = false;
         _isRestoringSession = false;
@@ -227,6 +294,8 @@ class AuthProvider with ChangeNotifier {
             name: user.userMetadata?['full_name'] ??
                 googleUser.displayName ??
                 'User',
+            phone: user.userMetadata?['phone'] as String?,
+            address: user.userMetadata?['address'] as String?,
           );
         } catch (profileError) {
           // Profile might already exist, ignore error
@@ -254,6 +323,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> _loadUserProfile(String userId) async {
     try {
       final userProfile = await _userProfileRepository.getUserProfile(userId);
+      _clearPendingVerification();
 
       _currentUser = local_user.User(
         id: userProfile.id,
@@ -276,10 +346,14 @@ class AuthProvider with ChangeNotifier {
         await remoteDataSource.upsertUserProfile(
           userId: authUser.id,
           email: authUser.email ?? _currentUser?.email ?? '',
-          name: authUser.userMetadata?['full_name'] ??
+          name: _displayNameForAuthUser(
+                authUser,
+                fallbackName: _currentUser?.name,
+              ) ??
               _currentUser?.name ??
               'User',
           phone: _currentUser?.phone,
+          address: _currentUser?.address,
         );
 
         final fallbackProfile =
@@ -294,8 +368,10 @@ class AuthProvider with ChangeNotifier {
         _notifySafely();
       } catch (profileRecoveryError) {
         debugPrint('Profile recovery error: $profileRecoveryError');
-        final recoveredName =
-            (authUser.userMetadata?['full_name'] as String?)?.trim();
+        final recoveredName = _displayNameForAuthUser(
+          authUser,
+          fallbackName: _currentUser?.name,
+        );
         _currentUser = local_user.User(
           id: authUser.id,
           name: (recoveredName != null && recoveredName.isNotEmpty)
@@ -342,6 +418,7 @@ class AuthProvider with ChangeNotifier {
         await _googleSignIn.signOut();
       }
       _currentUser = null;
+      _clearPendingVerification();
       _errorMessage = null;
       _isLoading = false;
       _isRestoringSession = false;
@@ -361,6 +438,7 @@ class AuthProvider with ChangeNotifier {
     required String name,
     required String email,
     String? phone,
+    String? address,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -391,6 +469,7 @@ class AuthProvider with ChangeNotifier {
         name: name,
         email: normalizedEmail,
         phone: phone,
+        address: address,
       );
 
       // Update local state
@@ -399,7 +478,7 @@ class AuthProvider with ChangeNotifier {
         name: name,
         email: normalizedEmail,
         phone: phone ?? _currentUser?.phone,
-        address: _currentUser?.address,
+        address: address,
       );
 
       _isLoading = false;
@@ -412,11 +491,52 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> deleteAccount() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await remoteDataSource.deleteCurrentUserAccount();
+
+      if (await _googleSignIn.isSignedIn()) {
+        await _googleSignIn.signOut();
+      }
+
+      await Supabase.instance.client.auth.signOut();
+      _currentUser = null;
+      _clearPendingVerification();
+      _isLoading = false;
+      _isRestoringSession = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Delete account error: ${e.toString()}';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Check if user is authenticated with Supabase
   Future<bool> checkAuthStatus() async {
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
+        if (!_isEmailVerified(user)) {
+          _currentUser = null;
+          _markEmailVerificationPending(
+            email: user.email,
+            name: _displayNameForAuthUser(
+              user,
+              fallbackName: _pendingVerificationName,
+            ),
+          );
+          _isRestoringSession = false;
+          notifyListeners();
+          return false;
+        }
+
         await _loadUserProfile(user.id);
         _isRestoringSession = false;
         notifyListeners();
@@ -436,6 +556,75 @@ class AuthProvider with ChangeNotifier {
     return Supabase.instance.client.auth.currentUser != null
         ? _currentUser
         : null;
+  }
+
+  Future<bool> resendVerificationEmail() async {
+    final email = _pendingVerificationEmail;
+    if (email == null || email.isEmpty) {
+      _errorMessage = 'No email available for verification.';
+      _notifySafely();
+      return false;
+    }
+
+    try {
+      _errorMessage = null;
+      notifyListeners();
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: email,
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = 'Unable to resend verification email right now.';
+      debugPrint('Resend verification error: $e');
+      _notifySafely();
+      return false;
+    }
+  }
+
+  void setPendingVerificationContext({
+    required String email,
+    String? name,
+  }) {
+    _markEmailVerificationPending(email: email, name: name);
+    _notifySafely();
+  }
+
+  bool _isEmailVerified(dynamic user) {
+    return user.emailConfirmedAt != null;
+  }
+
+  String? _displayNameForAuthUser(dynamic user, {String? fallbackName}) {
+    final fullName = (user.userMetadata?['full_name'] as String?)?.trim();
+    if (fullName != null && fullName.isNotEmpty) {
+      return fullName;
+    }
+
+    final name = (user.userMetadata?['name'] as String?)?.trim();
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+
+    if (fallbackName != null && fallbackName.trim().isNotEmpty) {
+      return fallbackName.trim();
+    }
+
+    return null;
+  }
+
+  void _markEmailVerificationPending({
+    required String? email,
+    String? name,
+  }) {
+    _isAwaitingEmailVerification = true;
+    _pendingVerificationEmail = email?.trim();
+    _pendingVerificationName = name?.trim();
+  }
+
+  void _clearPendingVerification() {
+    _isAwaitingEmailVerification = false;
+    _pendingVerificationEmail = null;
+    _pendingVerificationName = null;
   }
 
   @override

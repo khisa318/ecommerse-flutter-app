@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/theme.dart';
 import 'home_screen.dart';
 import 'shop_screen.dart';
 import 'wishlist_screen.dart';
@@ -28,6 +29,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -41,10 +45,10 @@ class _MainScreenState extends State<MainScreen> {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.bottomNavigationBarTheme.backgroundColor,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: colors.shadowColor,
               blurRadius: 20,
               offset: const Offset(0, -5),
             ),

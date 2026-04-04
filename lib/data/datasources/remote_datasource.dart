@@ -1,5 +1,7 @@
 /// Remote Data Source - Handles all Supabase API calls
+import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../exceptions/exceptions.dart';
 import '../models/dtos.dart';
 
 class RemoteDataSource {
@@ -22,114 +24,123 @@ class RemoteDataSource {
     int limit = 20,
     List<int>? categoryIds,
   }) async {
-    try {
-      final offset = (page - 1) * limit;
-      print(
-        'RemoteDataSource: Querying products - '
-        'Page: $page, Offset: $offset, Limit: $limit',
-      );
-
-      final response = await _fetchProductsResponse(
-        offset: offset,
-        limit: limit,
-        categoryIds: categoryIds,
-        activeOnly: true,
-      );
-
-      print('RemoteDataSource: Raw response type: ${response.runtimeType}');
-      print('RemoteDataSource: Raw response: $response');
-
-      final responseList = List<dynamic>.from(response as List);
-      print('RemoteDataSource: Response list length: ${responseList.length}');
-
-      if (responseList.isEmpty) {
+    return _runSupabaseRequest(
+      operation: 'fetch_products',
+      fallbackMessage: 'Unable to load products right now.',
+      request: () async {
+        final offset = (page - 1) * limit;
         print(
-          'RemoteDataSource: No products found with is_active=true. '
-          'Checking database without that filter...',
+          'RemoteDataSource: Querying products - '
+          'Page: $page, Offset: $offset, Limit: $limit',
         );
-        final allResponse = await _fetchProductsResponse(
+
+        final response = await _fetchProductsResponse(
           offset: offset,
           limit: limit,
           categoryIds: categoryIds,
-          activeOnly: false,
+          activeOnly: true,
         );
-        final allProducts = List<dynamic>.from(allResponse as List);
-        print(
-          'RemoteDataSource: All products (no filter): '
-          '${allProducts.length} items',
-        );
-        if (allProducts.isNotEmpty) {
-          print('RemoteDataSource: First fallback product: ${allProducts[0]}');
-          responseList.addAll(allProducts);
-        }
-      }
 
-      final dtos = <ProductDTO>[];
-      for (int i = 0; i < responseList.length; i++) {
-        try {
-          final json = responseList[i] as Map<String, dynamic>;
-          print('RemoteDataSource: Parsing product $i: ${json.toString()}');
-          final dto = ProductDTO.fromJson(json);
-          dtos.add(dto);
-          print('RemoteDataSource: Successfully parsed product: ${dto.title}');
-        } catch (parseError) {
+        print('RemoteDataSource: Raw response type: ${response.runtimeType}');
+        print('RemoteDataSource: Raw response: $response');
+
+        final responseList = List<dynamic>.from(response as List);
+        print('RemoteDataSource: Response list length: ${responseList.length}');
+
+        if (responseList.isEmpty) {
           print(
-            'RemoteDataSource: Error parsing product at index $i: '
-            '$parseError',
+            'RemoteDataSource: No products found with is_active=true. '
+            'Checking database without that filter...',
           );
-          print('RemoteDataSource: Raw JSON: ${responseList[i]}');
+          final allResponse = await _fetchProductsResponse(
+            offset: offset,
+            limit: limit,
+            categoryIds: categoryIds,
+            activeOnly: false,
+          );
+          final allProducts = List<dynamic>.from(allResponse as List);
+          print(
+            'RemoteDataSource: All products (no filter): '
+            '${allProducts.length} items',
+          );
+          if (allProducts.isNotEmpty) {
+            print(
+                'RemoteDataSource: First fallback product: ${allProducts[0]}');
+            responseList.addAll(allProducts);
+          }
         }
-      }
 
-      print('RemoteDataSource: Successfully converted ${dtos.length} DTOs');
-      return dtos;
-    } catch (e) {
-      print('RemoteDataSource Error: $e');
-      print('RemoteDataSource stack trace: ${StackTrace.current}');
-      throw Exception('Failed to fetch products: $e');
-    }
+        final dtos = <ProductDTO>[];
+        for (int i = 0; i < responseList.length; i++) {
+          try {
+            final json = responseList[i] as Map<String, dynamic>;
+            print('RemoteDataSource: Parsing product $i: ${json.toString()}');
+            final dto = ProductDTO.fromJson(json);
+            dtos.add(dto);
+            print(
+                'RemoteDataSource: Successfully parsed product: ${dto.title}');
+          } catch (parseError) {
+            print(
+              'RemoteDataSource: Error parsing product at index $i: '
+              '$parseError',
+            );
+            print('RemoteDataSource: Raw JSON: ${responseList[i]}');
+          }
+        }
+
+        print('RemoteDataSource: Successfully converted ${dtos.length} DTOs');
+        return dtos;
+      },
+    );
   }
 
   /// Fetch single product by ID
   Future<ProductDTO> getProductById(int id) async {
-    try {
-      final response =
-          await supabaseClient.from('products').select().eq('id', id).single();
+    return _runSupabaseRequest(
+      operation: 'fetch_product_by_id',
+      fallbackMessage: 'Unable to load this product right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('products')
+            .select()
+            .eq('id', id)
+            .single();
 
-      return ProductDTO.fromJson(response);
-    } catch (e) {
-      throw Exception('Failed to fetch product: $e');
-    }
+        return ProductDTO.fromJson(response);
+      },
+    );
   }
 
   /// Search products by title or description
   Future<List<ProductDTO>> searchProducts(String query) async {
-    try {
-      List<dynamic> response = List<dynamic>.from(
-        await supabaseClient
-            .from('products')
-            .select()
-            .eq('is_active', true)
-            .or('title.ilike.%$query%,description.ilike.%$query%')
-            .order('created_at', ascending: false) as List,
-      );
-
-      if (response.isEmpty) {
-        response = List<dynamic>.from(
+    return _runSupabaseRequest(
+      operation: 'search_products',
+      fallbackMessage: 'Unable to search products right now.',
+      request: () async {
+        List<dynamic> response = List<dynamic>.from(
           await supabaseClient
               .from('products')
               .select()
+              .eq('is_active', true)
               .or('title.ilike.%$query%,description.ilike.%$query%')
               .order('created_at', ascending: false) as List,
         );
-      }
 
-      return response
-          .map((json) => ProductDTO.fromJson(json as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      throw Exception('Failed to search products: $e');
-    }
+        if (response.isEmpty) {
+          response = List<dynamic>.from(
+            await supabaseClient
+                .from('products')
+                .select()
+                .or('title.ilike.%$query%,description.ilike.%$query%')
+                .order('created_at', ascending: false) as List,
+          );
+        }
+
+        return response
+            .map((json) => ProductDTO.fromJson(json as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   /// Fetch product with images
@@ -151,33 +162,37 @@ class RemoteDataSource {
 
   /// Fetch all active categories
   Future<List<CategoryDTO>> getCategories() async {
-    try {
-      final response = await supabaseClient
-          .from('categories')
-          .select()
-          .order('name', ascending: true);
+    return _runSupabaseRequest(
+      operation: 'fetch_categories',
+      fallbackMessage: 'Unable to load categories right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('categories')
+            .select()
+            .order('name', ascending: true);
 
-      return (response as List)
-          .map((json) => CategoryDTO.fromJson(json))
-          .toList();
-    } catch (e) {
-      throw Exception('Failed to fetch categories: $e');
-    }
+        return (response as List)
+            .map((json) => CategoryDTO.fromJson(json))
+            .toList();
+      },
+    );
   }
 
   /// Fetch category by ID
   Future<CategoryDTO> getCategoryById(int id) async {
-    try {
-      final response = await supabaseClient
-          .from('categories')
-          .select()
-          .eq('id', id)
-          .single();
+    return _runSupabaseRequest(
+      operation: 'fetch_category_by_id',
+      fallbackMessage: 'Unable to load this category right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('categories')
+            .select()
+            .eq('id', id)
+            .single();
 
-      return CategoryDTO.fromJson(response);
-    } catch (e) {
-      throw Exception('Failed to fetch category: $e');
-    }
+        return CategoryDTO.fromJson(response);
+      },
+    );
   }
 
   // ==================== ORDERS ====================
@@ -217,32 +232,38 @@ class RemoteDataSource {
 
   /// Fetch user's orders
   Future<List<OrderDTO>> getUserOrders(String userId) async {
-    try {
-      final response = await supabaseClient
-          .from('orders')
-          .select()
-          .eq('user_id', userId)
-          .order('created_at', ascending: false);
+    return _runSupabaseRequest(
+      operation: 'fetch_user_orders',
+      fallbackMessage: 'Unable to load your orders right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('orders')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false);
 
-      return (response as List).map((json) => OrderDTO.fromJson(json)).toList();
-    } catch (e) {
-      throw Exception('Failed to fetch orders: $e');
-    }
+        return (response as List)
+            .map((json) => OrderDTO.fromJson(json))
+            .toList();
+      },
+    );
   }
 
   /// Fetch order details with items
   Future<OrderDTO> getOrderWithItems(int orderId) async {
-    try {
-      final response = await supabaseClient
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('id', orderId)
-          .single();
+    return _runSupabaseRequest(
+      operation: 'fetch_order_with_items',
+      fallbackMessage: 'Unable to load this order right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('orders')
+            .select('*, order_items(*)')
+            .eq('id', orderId)
+            .single();
 
-      return OrderDTO.fromJson(response);
-    } catch (e) {
-      throw Exception('Failed to fetch order details: $e');
-    }
+        return OrderDTO.fromJson(response);
+      },
+    );
   }
 
   /// Update order status (admin only)
@@ -382,33 +403,37 @@ class RemoteDataSource {
 
   /// Fetch user profile
   Future<UserProfileDTO> getUserProfile(String userId) async {
-    try {
-      final response = await supabaseClient
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .single();
+    return _runSupabaseRequest(
+      operation: 'fetch_user_profile',
+      fallbackMessage: 'Unable to load your profile right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('profiles')
+            .select()
+            .eq('id', userId)
+            .single();
 
-      return UserProfileDTO.fromJson(response);
-    } catch (e) {
-      throw Exception('Failed to fetch user profile: $e');
-    }
+        return UserProfileDTO.fromJson(response);
+      },
+    );
   }
 
   /// Update user profile
   Future<void> updateUserProfile({
     required String userId,
-    String? name,
-    String? email,
+    required String name,
+    required String email,
     String? phone,
     String? address,
   }) async {
     try {
-      final updateData = <String, dynamic>{};
-      if (name != null) updateData['name'] = name;
-      if (email != null) updateData['email'] = email;
-      if (phone != null) updateData['phone'] = phone;
-      if (address != null) updateData['address'] = address;
+      final updateData = <String, dynamic>{
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'address': address,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
 
       await supabaseClient.from('profiles').update(updateData).eq('id', userId);
     } catch (e) {
@@ -421,6 +446,7 @@ class RemoteDataSource {
     required String email,
     required String name,
     String? phone,
+    String? address,
   }) async {
     try {
       await supabaseClient.from('profiles').upsert({
@@ -428,11 +454,21 @@ class RemoteDataSource {
         'email': email,
         'name': name,
         'phone': phone,
+        'address': address,
         'role': 'customer',
         'updated_at': DateTime.now().toIso8601String(),
       });
     } catch (e) {
       throw Exception('Failed to upsert user profile: $e');
+    }
+  }
+
+  Future<void> deleteCurrentUserAccount() async {
+    try {
+      await supabaseClient.functions
+          .invoke('delete-account', method: HttpMethod.post);
+    } catch (e) {
+      throw Exception('Failed to delete account: $e');
     }
   }
 
@@ -443,107 +479,116 @@ class RemoteDataSource {
     required String phoneNumber,
     required int amount,
   }) async {
-    try {
-      if (supabaseClient.auth.currentUser == null) {
-        throw Exception(
-          'Please sign in before requesting an M-Pesa STK push',
-        );
-      }
-
-      final response = await supabaseClient.functions.invoke(
-        'mpesa-stk-push',
-        body: {
-          'phone': phoneNumber,
-          'amount': amount,
-          'orderId': orderId,
-        },
-      );
-
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
-        if (data['success'] == false) {
-          throw Exception(
-            data['error']?.toString() ?? 'Failed to initiate M-Pesa payment',
+    return _runSupabaseRequest(
+      operation: 'initiate_mpesa_stk_push',
+      fallbackMessage: 'Unable to start M-Pesa right now. Please try again.',
+      request: () async {
+        if (supabaseClient.auth.currentUser == null) {
+          throw BusinessException(
+            'Please sign in before requesting an M-Pesa STK push',
           );
         }
-        return data;
-      }
 
-      if (data is Map) {
-        final responseMap = Map<String, dynamic>.from(data);
-        if (responseMap['success'] == false) {
+        final response = await supabaseClient.functions.invoke(
+          'mpesa-stk-push',
+          body: {
+            'phone': phoneNumber,
+            'amount': amount,
+            'orderId': orderId,
+          },
+        );
+
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          if (data['success'] == false) {
+            throw Exception(
+              data['error']?.toString() ?? 'Failed to initiate M-Pesa payment',
+            );
+          }
+          return data;
+        }
+
+        if (data is Map) {
+          final responseMap = Map<String, dynamic>.from(data);
+          if (responseMap['success'] == false) {
+            throw Exception(
+              responseMap['error']?.toString() ??
+                  'Failed to initiate M-Pesa payment',
+            );
+          }
+          return responseMap;
+        }
+
+        throw Exception('Unexpected M-Pesa response from server');
+      },
+      onError: (error) {
+        if (error is FunctionException && error.status == 404) {
           throw Exception(
-            responseMap['error']?.toString() ??
-                'Failed to initiate M-Pesa payment',
+            'M-Pesa backend is not deployed yet. Deploy the Supabase edge '
+            'function "mpesa-stk-push" for project xjmgfmkhtzdybbgkintb, then '
+            'try again.',
           );
         }
-        return responseMap;
-      }
-
-      throw Exception('Unexpected M-Pesa response from server');
-    } on FunctionException catch (e) {
-      if (e.status == 404) {
-        throw Exception(
-          'M-Pesa backend is not deployed yet. Deploy the Supabase edge '
-          'function "mpesa-stk-push" for project xjmgfmkhtzdybbgkintb, then '
-          'try again.',
+        return UiSafeErrorMapper.toAppException(
+          error,
+          fallbackMessage:
+              'Unable to start M-Pesa right now. Please try again.',
         );
-      }
-      throw Exception(
-        'Failed to initiate M-Pesa payment: '
-        '${e.details ?? e.reasonPhrase ?? e.toString()}',
-      );
-    } catch (e) {
-      throw Exception('Failed to initiate M-Pesa payment: $e');
-    }
+      },
+    );
   }
 
   Future<Map<String, dynamic>> getMpesaPaymentStatus({
     required int orderId,
   }) async {
-    try {
-      final response = await supabaseClient.functions.invoke(
-        'payment-status',
-        method: HttpMethod.get,
-        queryParameters: {
-          'order_id': orderId.toString(),
-        },
-      );
-
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
-        if (data['success'] == false) {
-          throw Exception(
-            data['error']?.toString() ?? 'Failed to fetch payment status',
-          );
-        }
-        return data;
-      }
-
-      if (data is Map) {
-        final responseMap = Map<String, dynamic>.from(data);
-        if (responseMap['success'] == false) {
-          throw Exception(
-            responseMap['error']?.toString() ??
-                'Failed to fetch payment status',
-          );
-        }
-        return responseMap;
-      }
-
-      throw Exception('Unexpected payment status response from server');
-    } on FunctionException catch (e) {
-      if (e.status == 404) {
-        throw Exception(
-          'Payment status backend is not deployed yet. Deploy the Supabase '
-          'edge function "payment-status" for project xjmgfmkhtzdybbgkintb.',
+    return _runSupabaseRequest(
+      operation: 'fetch_mpesa_payment_status',
+      fallbackMessage: 'Unable to check payment status right now.',
+      request: () async {
+        final response = await supabaseClient.functions.invoke(
+          'payment-status',
+          method: HttpMethod.get,
+          queryParameters: {
+            'order_id': orderId.toString(),
+          },
         );
-      }
-      throw Exception(
-          'Failed to fetch payment status: ${e.details ?? e.reasonPhrase ?? e.toString()}');
-    } catch (e) {
-      throw Exception('Failed to fetch payment status: $e');
-    }
+
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          if (data['success'] == false) {
+            throw Exception(
+              data['error']?.toString() ?? 'Failed to fetch payment status',
+            );
+          }
+          return data;
+        }
+
+        if (data is Map) {
+          final responseMap = Map<String, dynamic>.from(data);
+          if (responseMap['success'] == false) {
+            throw Exception(
+              responseMap['error']?.toString() ??
+                  'Failed to fetch payment status',
+            );
+          }
+          return responseMap;
+        }
+
+        throw Exception('Unexpected payment status response from server');
+      },
+      onError: (error) {
+        if (error is FunctionException && error.status == 404) {
+          throw Exception(
+            'Payment status backend is not deployed yet. Deploy the Supabase '
+            'edge function "payment-status" for project xjmgfmkhtzdybbgkintb.',
+          );
+        }
+        return UiSafeErrorMapper.toAppException(
+          error,
+          fallbackMessage: 'Unable to check payment status right now.',
+        );
+      },
+    );
   }
 
   Stream<List<Map<String, dynamic>>> watchPaymentsForOrder(int orderId) {
@@ -559,26 +604,28 @@ class RemoteDataSource {
   }
 
   Future<Map<String, dynamic>?> getLatestPaymentForOrder(int orderId) async {
-    try {
-      final response = await supabaseClient
-          .from('payments')
-          .select(
-            'id, order_id, status, mpesa_receipt_number, phone_number, amount, '
-            'customer_message, result_desc, checkout_request_id, updated_at',
-          )
-          .eq('order_id', orderId)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+    return _runSupabaseRequest(
+      operation: 'fetch_latest_payment',
+      fallbackMessage: 'Unable to load payment details right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('payments')
+            .select(
+              'id, order_id, status, mpesa_receipt_number, phone_number, amount, '
+              'customer_message, result_desc, checkout_request_id, updated_at',
+            )
+            .eq('order_id', orderId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
 
-      if (response == null) {
-        return null;
-      }
+        if (response == null) {
+          return null;
+        }
 
-      return Map<String, dynamic>.from(response);
-    } catch (e) {
-      throw Exception('Failed to fetch latest payment: $e');
-    }
+        return Map<String, dynamic>.from(response);
+      },
+    );
   }
 
   // ==================== STOCK MANAGEMENT ====================
@@ -602,19 +649,21 @@ class RemoteDataSource {
 
   /// Get product images
   Future<List<String>> getProductImages(int productId) async {
-    try {
-      final response = await supabaseClient
-          .from('product_images')
-          .select('image_url')
-          .eq('product_id', productId)
-          .order('order', ascending: true);
+    return _runSupabaseRequest(
+      operation: 'fetch_product_images',
+      fallbackMessage: 'Unable to load product images right now.',
+      request: () async {
+        final response = await supabaseClient
+            .from('product_images')
+            .select('image_url')
+            .eq('product_id', productId)
+            .order('order', ascending: true);
 
-      return (response as List)
-          .map((json) => json['image_url'] as String)
-          .toList();
-    } catch (e) {
-      throw Exception('Failed to fetch product images: $e');
-    }
+        return (response as List)
+            .map((json) => json['image_url'] as String)
+            .toList();
+      },
+    );
   }
 
   Future<dynamic> _fetchProductsResponse({
@@ -627,12 +676,44 @@ class RemoteDataSource {
 
     if (categoryIds != null && categoryIds.isNotEmpty) {
       print('RemoteDataSource: Filtering by category_ids: $categoryIds');
-      query = query.in_('category_id', categoryIds);
+      query = query.inFilter('category_id', categoryIds);
     }
 
     return query.order('created_at', ascending: false).range(
           offset,
           offset + limit - 1,
         );
+  }
+
+  Future<T> _runSupabaseRequest<T>({
+    required String operation,
+    required Future<T> Function() request,
+    String? fallbackMessage,
+    AppException Function(Object error)? onError,
+  }) async {
+    var attempt = 0;
+
+    while (true) {
+      try {
+        return await request();
+      } catch (error, stackTrace) {
+        UiSafeErrorMapper.logTechnicalError(operation, error, stackTrace);
+
+        if (UiSafeErrorMapper.isNetworkError(error) && attempt < 1) {
+          attempt += 1;
+          await Future<void>.delayed(const Duration(seconds: 2));
+          continue;
+        }
+
+        if (onError != null) {
+          throw onError(error);
+        }
+
+        throw UiSafeErrorMapper.toAppException(
+          error,
+          fallbackMessage: fallbackMessage,
+        );
+      }
+    }
   }
 }

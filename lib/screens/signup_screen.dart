@@ -15,6 +15,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _addressController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
@@ -24,6 +26,8 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -35,6 +39,12 @@ class _SignupScreenState extends State<SignupScreen> {
             name: _nameController.text.trim(),
             email: _emailController.text.trim(),
             password: _passwordController.text,
+            phone: _phoneController.text.trim().isEmpty
+                ? null
+                : _phoneController.text.trim(),
+            address: _addressController.text.trim().isEmpty
+                ? null
+                : _addressController.text.trim(),
           );
 
       if (!mounted) return;
@@ -42,6 +52,15 @@ class _SignupScreenState extends State<SignupScreen> {
       if (success) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
+          final auth = context.read<AuthProvider>();
+          if (auth.isAwaitingEmailVerification) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/verify-email',
+              (route) => false,
+            );
+            return;
+          }
+
           Navigator.of(context).pushNamedAndRemoveUntil(
             '/main',
             (route) => false,
@@ -66,7 +85,7 @@ class _SignupScreenState extends State<SignupScreen> {
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F8FD),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 22, 24, 28),
@@ -158,6 +177,21 @@ class _SignupScreenState extends State<SignupScreen> {
                               }
                               return null;
                             },
+                          ),
+                          const SizedBox(height: 16),
+                          _buildInput(
+                            controller: _phoneController,
+                            label: 'Phone Number',
+                            icon: Icons.phone_outlined,
+                            keyboardType: TextInputType.phone,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildInput(
+                            controller: _addressController,
+                            label: 'Address',
+                            icon: Icons.home_outlined,
+                            keyboardType: TextInputType.streetAddress,
+                            maxLines: 3,
                           ),
                           const SizedBox(height: 16),
                           _buildInput(
@@ -308,16 +342,19 @@ class _SignupScreenState extends State<SignupScreen> {
     required TextEditingController controller,
     required String label,
     required IconData icon,
-    required String? Function(String?) validator,
+    String? Function(String?)? validator,
     TextInputType keyboardType = TextInputType.text,
     bool obscureText = false,
     Widget? suffix,
+    int maxLines = 1,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
       validator: validator,
+      minLines: maxLines > 1 ? maxLines : 1,
+      maxLines: obscureText ? 1 : maxLines,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: AppTheme.primaryColor),

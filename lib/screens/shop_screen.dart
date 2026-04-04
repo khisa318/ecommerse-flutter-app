@@ -92,10 +92,14 @@ class _ShopScreenState extends State<ShopScreen> {
         
         if (isSearching) {
           displayProducts = searchResults;
-        } else if (isSelectingCategory && productProvider.isLoading) {
-          // Perform local filter on the memory list until backend returns for instant feedback
-          final selectedIds = productProvider.getDescendantIds(productProvider.selectedCategoryId!);
-          displayProducts = allProducts.where((p) => selectedIds.contains(p.categoryId)).toList();
+        } else if (isSelectingCategory) {
+          if (productProvider.isLoading && productProvider.categoryResults.isEmpty) {
+            // Perform local filter on the memory list until backend returns for instant feedback
+            final selectedIds = productProvider.getDescendantIds(productProvider.selectedCategoryId!);
+            displayProducts = allProducts.where((p) => selectedIds.contains(p.categoryId)).toList();
+          } else {
+            displayProducts = productProvider.categoryResults;
+          }
         } else {
           displayProducts = allProducts;
         }
@@ -104,7 +108,7 @@ class _ShopScreenState extends State<ShopScreen> {
         final isLoadingInitially = productProvider.isInitialDataLoading && allProducts.isEmpty;
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F7FB),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -257,6 +261,39 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
                   ),
 
+                  if (productProvider.errorMessage != null)
+                    SliverToBoxAdapter(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.red.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.wifi_off_rounded, color: Colors.red.shade400),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                productProvider.errorMessage!.replaceAll('Exception: ', ''),
+                                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => productProvider.refreshProducts(),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   if (productProvider.isSearching)
                     const SliverToBoxAdapter(
                       child: Padding(
@@ -323,13 +360,15 @@ class _ShopScreenState extends State<ShopScreen> {
                       sliver: SliverGrid(
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
-                          childAspectRatio: 0.65,
+                          childAspectRatio: 0.55,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
                         ),
                         delegate: SliverChildBuilderDelegate(
                           (context, index) => ProductCard(
-                            product: displayProducts[index].toModel(),
+                            product: displayProducts[index].toModel(
+                              categoryName: productProvider.getCategoryName(displayProducts[index].categoryId)
+                            ),
                           ),
                           childCount: displayProducts.length,
                         ),

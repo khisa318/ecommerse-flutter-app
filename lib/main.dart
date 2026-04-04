@@ -13,6 +13,7 @@ import 'providers/checkout_provider.dart';
 import 'providers/product_provider.dart';
 import 'providers/wishlist_provider.dart';
 import 'providers/sync_provider.dart';
+import 'providers/theme_provider.dart';
 import 'data/repositories/sync_repository.dart';
 import 'screens/address_screen.dart';
 import 'screens/cart_screen.dart';
@@ -29,6 +30,7 @@ import 'screens/profile_screen.dart';
 import 'screens/reviews_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/verify_email_screen.dart';
 import 'screens/wishlist_screen.dart';
 import 'utils/theme.dart';
 
@@ -79,6 +81,7 @@ class _CyberspexAppState extends State<CyberspexApp> {
   late final CheckoutProvider _checkoutProvider;
   late final WishlistProvider _wishlistProvider;
   late final SyncRepository _syncRepository;
+  late final ThemeProvider _themeProvider;
 
   @override
   void initState() {
@@ -108,6 +111,9 @@ class _CyberspexAppState extends State<CyberspexApp> {
     _wishlistProvider = WishlistProvider(
       remoteDataSource: _remoteDataSource,
     );
+    _themeProvider = ThemeProvider(
+      sharedPreferences: widget.sharedPreferences,
+    );
     _syncRepository = SyncRepository(
       supabaseClient: Supabase.instance.client,
       sharedPreferences: widget.sharedPreferences,
@@ -136,6 +142,7 @@ class _CyberspexAppState extends State<CyberspexApp> {
 
         ChangeNotifierProvider<WishlistProvider>.value(
             value: _wishlistProvider),
+        ChangeNotifierProvider<ThemeProvider>.value(value: _themeProvider),
 
         ChangeNotifierProxyProvider<AuthProvider, SyncProvider>(
           create: (context) => SyncProvider(
@@ -148,36 +155,35 @@ class _CyberspexAppState extends State<CyberspexApp> {
           ),
         ),
       ],
-      child: MaterialApp(
-        title: 'Cyberspex Technologies',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        home: const SplashScreen(),
-        onGenerateRoute: _generateRoute,
-        routes: {
-          // Onboarding
-          '/onboarding': (context) => const OnboardingScreen(),
-
-          // Authentication routes
-          '/login': (context) => const LoginScreen(),
-          '/signup': (context) => const SignupScreen(),
-
-          '/home': (context) => const HomeScreen(),
-
-          // Core feature routes
-          '/shop': (context) => const ShopScreen(),
-          '/wishlist': (context) => const WishlistScreen(),
-          '/cart': (context) => const CartScreen(),
-          '/checkout': (context) => const CheckoutScreen(),
-          '/profile': (context) => const ProfileScreen(),
-          '/inbox': (context) => const InboxScreen(),
-          '/customer-service': (context) => const CustomerServiceScreen(),
-          '/reviews': (context) => const ReviewsScreen(),
-
-          // User management routes
-          '/orders': (context) => const OrderHistoryScreen(),
-          '/addresses': (context) => const AddressScreen(),
-        },
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'Cyberspex Technologies',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: themeProvider.themeMode,
+          themeAnimationCurve: Curves.easeInOut,
+          themeAnimationDuration: const Duration(milliseconds: 220),
+          home: const SplashScreen(),
+          onGenerateRoute: _generateRoute,
+          routes: {
+            '/onboarding': (context) => const OnboardingScreen(),
+            '/login': (context) => const LoginScreen(),
+            '/signup': (context) => const SignupScreen(),
+            '/verify-email': (context) => const VerifyEmailScreen(),
+            '/home': (context) => const HomeScreen(),
+            '/shop': (context) => const ShopScreen(),
+            '/wishlist': (context) => const WishlistScreen(),
+            '/cart': (context) => const CartScreen(),
+            '/checkout': (context) => const CheckoutScreen(),
+            '/profile': (context) => const ProfileScreen(),
+            '/inbox': (context) => const InboxScreen(),
+            '/customer-service': (context) => const CustomerServiceScreen(),
+            '/reviews': (context) => const ReviewsScreen(),
+            '/orders': (context) => const OrderHistoryScreen(),
+            '/addresses': (context) => const AddressScreen(),
+          },
+        ),
       ),
     );
   }

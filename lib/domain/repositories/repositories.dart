@@ -3,12 +3,12 @@ import '../../domain/entities/entities.dart';
 
 abstract class ProductRepository {
   /// Fetch paginated products from backend
-  /// 
+  ///
   /// Parameters:
   ///   - page: Page number (1-based)
   ///   - limit: Items per page
   ///   - categoryId: Optional category filter
-  /// 
+  ///
   /// Returns: List of Product entities
   Future<List<Product>> getProducts({
     int page,
@@ -36,12 +36,12 @@ abstract class CategoryRepository {
 
 abstract class OrderRepository {
   /// Create new order
-  /// 
+  ///
   /// Parameters:
   ///   - userId: User ID
   ///   - totalPrice: Total price in cents
   ///   - items: List of {product_id, quantity, price_at_purchase}
-  /// 
+  ///
   /// Returns: Order ID
   Future<int> createOrder({
     required String userId,
@@ -112,8 +112,8 @@ abstract class UserProfileRepository {
   /// Update user profile
   Future<void> updateUserProfile({
     required String userId,
-    String? name,
-    String? email,
+    required String name,
+    required String email,
     String? phone,
     String? address,
   });

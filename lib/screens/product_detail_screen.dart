@@ -88,7 +88,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             await productProvider.getProductById(productId);
         if (freshProductEntity != null && mounted) {
           setState(() {
-            _localProduct = freshProductEntity.toModel();
+            _localProduct = freshProductEntity.toModel(
+              categoryName: productProvider.getCategoryName(freshProductEntity.categoryId)
+            );
             _updateVariantSelection();
           });
         }
@@ -179,7 +181,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final isInWishlist = wishlistProvider.isInWishlist(_localProduct.id);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           CustomScrollView(
@@ -189,8 +191,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               SliverList(
                 delegate: SliverChildListDelegate([
                   Container(
-                    decoration: const BoxDecoration(
-                      color: AppTheme.background,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).scaffoldBackgroundColor,
                       borderRadius: BorderRadius.only(
                         topLeft: Radius.circular(40),
                         topRight: Radius.circular(40),
@@ -224,7 +226,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       expandedHeight: 0,
       floating: true,
       pinned: true,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
       elevation: 0,
       leadingWidth: 70,
       leading: Padding(

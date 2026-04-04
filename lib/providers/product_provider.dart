@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -10,6 +11,8 @@ class ProductProvider extends ChangeNotifier {
   final CategoryRepositoryImpl categoryRepository;
 
   List<Product> _products = [];
+  List<Product> _flashDeals = [];
+  List<Product> _categoryResults = [];
   List<Category> _categories = [];
   List<Category> _allCategories = []; // Store all categories for recursive lookup
   List<Product> _searchResults = [];
@@ -20,8 +23,10 @@ class ProductProvider extends ChangeNotifier {
   String? _errorMessage;
 
   int _currentPage = 1;
+  int _categoryPage = 1;
   final int _pageSize = 20;
   bool _hasMoreProducts = true;
+  bool _hasMoreCategoryProducts = true;
   bool _isDisposed = false;
 
   // New state tracking for backend-side filtering
@@ -29,10 +34,11 @@ class ProductProvider extends ChangeNotifier {
   String? _searchQuery;
 
   List<Product> get products => List.unmodifiable(_products);
+  List<Product> get categoryResults => List.unmodifiable(_categoryResults);
   List<Category> get categories => List.unmodifiable(_categories);
   List<Category> get allCategories => List.unmodifiable(_allCategories);
   List<Product> get searchResults => List.unmodifiable(_searchResults);
-  List<Product> get flashDeals => _products.take(6).toList();
+  List<Product> get flashDeals => List.unmodifiable(_flashDeals);
 
   int? get selectedCategoryId => _selectedCategoryId;
   String? get searchQuery => _searchQuery;
@@ -49,12 +55,22 @@ class ProductProvider extends ChangeNotifier {
     return ids;
   }
 
+  /// Get a category name by its ID
+  String getCategoryName(int categoryId) {
+    if (_allCategories.isEmpty) return 'Category';
+    final match = _allCategories.cast<Category?>().firstWhere(
+      (c) => c!.id == categoryId,
+      orElse: () => null,
+    );
+    return match?.name ?? 'Category';
+  }
+
   bool get isLoading => _isLoading;
   bool get isSearching => _isSearching;
   bool get isInitialDataLoading => _isInitialDataLoading;
   bool get hasLoadedInitialData => _hasLoadedInitialData;
   String? get errorMessage => _errorMessage;
-  bool get hasMoreProducts => _hasMoreProducts;
+  bool get hasMoreProducts => _selectedCategoryId == null ? _hasMoreProducts : _hasMoreCategoryProducts;
 
   ProductProvider({
     required this.productRepository,
@@ -92,27 +108,30 @@ class ProductProvider extends ChangeNotifier {
   }
 
   Future<void> getProducts({int? page, bool refresh = false}) async {
-    final pageNum = page ?? _currentPage;
+    final isCategoryFetch = _selectedCategoryId != null;
+    final pageNum = page ?? (isCategoryFetch ? _categoryPage : _currentPage);
 
     if (refresh) {
-      // Logic for hybrid filtering: 
-      // We don't clear immediately if we're just switching categories to allow local filtering while fetching
-      if (_selectedCategoryId == null && _searchQuery == null) {
+      if (!isCategoryFetch && _searchQuery == null) {
          _products.clear();
+         productRepository.clearProductCache();
+         _currentPage = 1;
+         _hasMoreProducts = true;
+      } else if (isCategoryFetch) {
+         _categoryResults.clear();
+         _categoryPage = 1;
+         _hasMoreCategoryProducts = true;
       }
-      _currentPage = 1;
-      _hasMoreProducts = true;
-      productRepository.clearProductCache();
     }
 
     if (_isLoading) return; // Prevent duplicate calls
 
     // Load cache instantly on first page if available and empty
-    if (pageNum == 1 && _products.isEmpty && !refresh && _selectedCategoryId == null) {
+    if (pageNum == 1 && _products.isEmpty && !refresh && !isCategoryFetch) {
       final cached = productRepository.getCachedProductsPage(page: 1);
       if (cached != null && cached.isNotEmpty) {
-        _products = List.from(cached);
-        _products.shuffle(); // Randomize on initial load from cache
+        _products = _mixPhonesAndOthers(List.from(cached));
+        _updateFlashDeals();
         _notifySafely();
       }
     }
@@ -123,7 +142,7 @@ class ProductProvider extends ChangeNotifier {
 
     try {
       List<int>? categoryIds;
-      if (_selectedCategoryId != null) {
+      if (isCategoryFetch) {
         categoryIds = getDescendantIds(_selectedCategoryId!);
       }
 
@@ -134,29 +153,50 @@ class ProductProvider extends ChangeNotifier {
       );
 
       if (newProducts.isEmpty) {
-        if (pageNum == 1) _products = [];
-        _hasMoreProducts = false;
-      } else {
         if (pageNum == 1) {
-          _products = List.from(newProducts);
-          // Only shuffle if it's the main discoveries page
-          if (_selectedCategoryId == null) {
-            _products.shuffle();
+          if (isCategoryFetch) _categoryResults = [];
+          else _products = [];
+        }
+        if (isCategoryFetch) _hasMoreCategoryProducts = false;
+        else _hasMoreProducts = false;
+      } else {
+        final random = Random();
+        if (pageNum == 1) {
+          if (isCategoryFetch) {
+            _categoryResults = List.from(newProducts);
+            _categoryResults.shuffle(random);
+          } else {
+            _products = _mixPhonesAndOthers(List.from(newProducts));
           }
         } else {
-          // Append preventing duplicates
-          final existingIds = _products.map((p) => p.id).toSet();
-          for (var np in newProducts) {
-            if (!existingIds.contains(np.id)) {
-              _products.add(np);
+          final shuffledNewProducts = List.from(newProducts)..shuffle(random);
+          if (isCategoryFetch) {
+            final existingIds = _categoryResults.map((p) => p.id).toSet();
+            for (var np in shuffledNewProducts) {
+              if (!existingIds.contains(np.id)) _categoryResults.add(np);
+            }
+          } else {
+            final existingIds = _products.map((p) => p.id).toSet();
+            final mixedNew = _mixPhonesAndOthers(List.from(newProducts));
+            for (var np in mixedNew) {
+              if (!existingIds.contains(np.id)) _products.add(np);
             }
           }
         }
-        _currentPage = pageNum;
-        _hasMoreProducts = newProducts.length >= _pageSize;
+        
+        if (isCategoryFetch) {
+          _categoryPage = pageNum;
+          _hasMoreCategoryProducts = newProducts.length >= _pageSize;
+        } else {
+          _currentPage = pageNum;
+          _hasMoreProducts = newProducts.length >= _pageSize;
+        }
       }
 
+      _hasLoadedInitialData = true;
+      _isInitialDataLoading = false;
       _isLoading = false;
+      _updateFlashDeals();
       _notifySafely();
     } on NetworkException catch (e) {
       _errorMessage = 'Network error: ${e.message}';
@@ -170,10 +210,87 @@ class ProductProvider extends ChangeNotifier {
   }
 
   Future<void> loadMoreProducts() async {
-    if (!_hasMoreProducts || _isLoading) {
+    final isCategoryFetch = _selectedCategoryId != null;
+    if (isCategoryFetch ? !_hasMoreCategoryProducts : !_hasMoreProducts) return;
+    if (_isLoading) return;
+    
+    await getProducts(page: (isCategoryFetch ? _categoryPage : _currentPage) + 1);
+  }
+
+  void _updateFlashDeals() {
+    if (_products.isEmpty) {
+      _flashDeals = [];
       return;
     }
-    await getProducts(page: _currentPage + 1);
+    
+    // Group by categoryId
+    final Map<int, List<Product>> byCategory = {};
+    for (var p in _products) {
+      byCategory.putIfAbsent(p.categoryId, () => []).add(p);
+    }
+    
+    List<Product> result = [];
+    final random = Random();
+    
+    // Pick 1 random from each category until we have 6, or repeat if needed
+    List<int> catIds = byCategory.keys.toList()..shuffle(random);
+    
+    // First pass: 1 from each distinct category
+    for (var cid in catIds) {
+      if (result.length >= 6) break;
+      var catProds = List<Product>.from(byCategory[cid]!);
+      if (catProds.isNotEmpty) {
+        catProds.shuffle(random);
+        result.add(catProds.first);
+      }
+    }
+    
+    // If less than 6 (e.g. only 3 categories in DB), backfill from remaining
+    if (result.length < 6) {
+       List<Product> remaining = byCategory.values.expand((list) => list).where((p) => !result.contains(p)).toList();
+       remaining.shuffle(random);
+       for (var p in remaining) {
+         if (result.length >= 6) break;
+         result.add(p);
+       }
+    }
+
+    _flashDeals = result;
+  }
+
+  List<Product> _mixPhonesAndOthers(List<Product> items) {
+    if (items.isEmpty) return items;
+    
+    final random = Random();
+    List<Product> phones = [];
+    List<Product> others = [];
+    
+    for (var p in items) {
+      final catName = getCategoryName(p.categoryId).toLowerCase();
+      if (catName.contains('phone') || catName.contains('mobile') || catName.contains('smartphone')) {
+        phones.add(p);
+      } else {
+        others.add(p);
+      }
+    }
+    
+    phones.shuffle(random);
+    others.shuffle(random);
+    
+    List<Product> mixed = [];
+    int pIdx = 0;
+    int oIdx = 0;
+    
+    while (pIdx < phones.length || oIdx < others.length) {
+      // Add 1 or 2 phones
+      if (pIdx < phones.length) mixed.add(phones[pIdx++]);
+      if (pIdx < phones.length && random.nextBool()) mixed.add(phones[pIdx++]);
+      
+      // Add 1 other
+      if (oIdx < others.length) mixed.add(others[oIdx++]);
+    }
+    
+    return mixed;
   }
 
   // --- Search Functions ---
@@ -227,9 +344,7 @@ class ProductProvider extends ChangeNotifier {
     _searchResults = [];
     _isSearching = false;
 
-    // Trigger backend fetch
-    // Note: We don't clear _products here. 
-    // The UI will perform local filtering on current _products while loading new ones.
+    // Trigger backend fetch for category specifically
     await refreshProducts();
   }
 
@@ -238,25 +353,7 @@ class ProductProvider extends ChangeNotifier {
       final allCats = await categoryRepository.getCategories();
       _allCategories = List.from(allCats);
       
-      const majorCategoryNames = [
-        'Smartphones', 
-        'Audio', 
-        'Accessories', 
-        'Gaming Accessories', 
-        'Storage Accessories'
-      ];
-
-      final filtered = <Category>[];
-      for (var name in majorCategoryNames) {
-        final found = _allCategories.firstWhere(
-          (cat) => cat.name.toLowerCase() == name.toLowerCase() && cat.isActive,
-          orElse: () => Category(id: -1, name: '', isActive: false, createdAt: DateTime.now())
-        );
-        if (found.id != -1) {
-          filtered.add(found);
-        }
-      }
-      _categories = filtered;
+      _categories = _allCategories.where((cat) => cat.isActive).toList();
       _notifySafely();
     } catch (e) {
       _errorMessage = 'Error loading categories: ${e.toString()}';

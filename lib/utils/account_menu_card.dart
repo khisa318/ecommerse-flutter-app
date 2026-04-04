@@ -11,14 +11,17 @@ class AccountMenuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = AppTheme.colors(context);
+
     return Container(
       margin: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: colors.shadowColor,
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -42,30 +45,30 @@ class AccountMenuCard extends StatelessWidget {
                 ),
                 title: Text(
                   item.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
+                    color: colors.textPrimary,
                   ),
                 ),
                 subtitle: item.subtitle == null
                     ? null
                     : Text(
                         item.subtitle!,
-                        style: const TextStyle(color: AppTheme.textSecondary),
+                        style: TextStyle(color: colors.textSecondary),
                       ),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
-                  color: AppTheme.textMuted,
+                  color: colors.textDisabled,
                 ),
                 onTap: item.onTap,
               ),
               if (index < items.length - 1)
-                const Divider(
+                Divider(
                   height: 1,
                   indent: 76,
                   endIndent: 20,
-                  color: AppTheme.borderLight,
+                  color: colors.borderLight,
                 ),
             ],
           );
